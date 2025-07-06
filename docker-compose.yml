@@ -8,7 +8,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -21,13 +21,18 @@ services:
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgresql://trading_user:secure_trading_password@postgres:5432/trading_db
+      HF_HOME: /app/.cache/huggingface
+      TRANSFORMERS_CACHE: /app/.cache/huggingface
+      HUGGINGFACE_HUB_CACHE: /app/.cache/huggingface
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - .:/workspace
+      - huggingface_cache:/app/.cache/huggingface
     working_dir: /workspace
     command: sleep infinity
 
 volumes:
   postgres_data:
+  huggingface_cache:

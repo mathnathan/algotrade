@@ -8,7 +8,6 @@ dependencies = [
     "torch>=2.1.0",
     "transformers>=4.35.0",
     "sentence-transformers>=2.2.2",
-    "psycopg2-binary>=2.9.7",
     "apscheduler>=3.10.4",
     "pandas>=2.1.0",
     "numpy>=1.24.0",
@@ -22,6 +21,8 @@ dependencies = [
     "pydantic-settings>=2.10.1",
     "peft>=0.16.0",
     "huggingface-hub>=0.33.1",
+    "sqlalchemy>=2.0.41",
+    "alembic>=1.16.2",
 ]
 
 [project.optional-dependencies]

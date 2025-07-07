@@ -4,9 +4,9 @@ FROM python:3.13
 RUN useradd --create-home --shell /bin/bash --uid 1000 vscode
 
 # Create the HuggingFace cache directory with proper permissions
-RUN mkdir -p /app/.cache/huggingface && \
-chown -R vscode:vscode /app/.cache && \
-chmod -R 755 /app/.cache
+RUN mkdir -p /workspace/.cache/huggingface && \
+chown -R vscode:vscode /workspace/.cache && \
+chmod -R 755 /workspace/.cache
 
 WORKDIR /workspace
 
@@ -17,6 +17,6 @@ RUN pip install --no-cache-dir uv
 USER vscode
 
 # Set HuggingFace environment variables as defaults
-ENV HF_HOME=/app/.cache/huggingface
-ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
-ENV HUGGINGFACE_HUB_CACHE=/app/.cache/huggingface
+ENV HF_HOME=/workspace/.cache/huggingface
+ENV TRANSFORMERS_CACHE=/workspace/.cache/huggingface
+ENV HUGGINGFACE_HUB_CACHE=/workspace/.cache/huggingface

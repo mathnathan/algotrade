@@ -128,10 +128,12 @@ main() {
     setup_alembic
     
     # Step 3: Initialize database
-    initialize_database
-    
-    log_section "Initialization Complete"
-    log_success "Trading bot infrastructure is ready!"
+    # Run as background process to not block VS Code's devcontainer initialization
+    {
+        initialize_database
+        log_section "Initialization Complete"
+        log_success "Trading bot infrastructure is ready!"
+    } &
     log_info "Container will now stay alive for development work..."
     log_info "You can attach to this container and start developing ETL pipelines"
     

@@ -16,6 +16,10 @@ RUN pip install --no-cache-dir uv
 
 USER vscode
 
+# Reduce Python's memory footprint during builds
+ENV PYTHONOPTIMIZE=1
+ENV PYTHONUNBUFFERED=1
+
 # Set HuggingFace environment variables as defaults
 ENV HF_HOME=/workspace/.cache/huggingface
 ENV TRANSFORMERS_CACHE=/workspace/.cache/huggingface

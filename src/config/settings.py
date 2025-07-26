@@ -1,6 +1,6 @@
 from pathlib import Path
 from dataclasses import dataclass
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 
@@ -118,8 +118,20 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
     # Database Configuration
-    database_url: str = Field(..., env="DATABASE_URL")
-    postgres_admin_url: str = Field(..., env="POSTGRES_ADMIN_URL")
+    trading_db_name: str = Field("trading_db", env="TRADING_DB_NAME")
+    trading_db_user: str = Field("trading_user", env="TRADING_DB_USER")
+    trading_db_password: str = Field("secure_trading_password", env="TRADING_DB_PASSWORD")
+
+    # Dynamically construct the database URL
+    @property
+    def database_url(self) -> str:
+        return (
+            f"postgresql+asyncpg://{self.trading_db_user}:"
+            f"{self.trading_db_password}@"
+            f"postgres:"
+            f"5432/"
+            f"{self.trading_db_name}"
+        )
     
     # Alpaca API Configuration
     # PAPER CONFIGURATION
@@ -153,9 +165,12 @@ class Settings(BaseSettings):
     model_save_path: Path = Field(Path("./models"))
     checkpoint_frequency: int = Field(10)  # Save every N epochs
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    # Save configurations
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
 # Global settings instance
 settings = Settings()

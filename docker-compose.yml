@@ -2,11 +2,19 @@ services:
   postgres:
     image: postgres:17
     environment:
+      # Admin credentials for PostgreSQL initialization
       POSTGRES_DB: postgres
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres_admin_password
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      
+      # Pass trading configuration to initialization script
+      DB_TRADING_DB_NAME: ${DB_TRADING_DB_NAME}
+      DB_TRADING_USER_NAME: ${DB_TRADING_USER_NAME} 
+      DB_TRADING_USER_PASSWORD: ${DB_TRADING_USER_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Mount the initialization script to create the trading database and user
+      - ./.devcontainer/scripts/init-database.sh:/docker-entrypoint-initdb.d/init-database.sh
     ports:
       - "5433:5432"
     healthcheck:
@@ -20,9 +28,8 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://trading_user:secure_trading_password@postgres:5432/trading_db
+      DATABASE_URL: ${DATABASE_URL}
       HF_HOME: /workspace/.cache/huggingface
-      TRANSFORMERS_CACHE: /workspace/.cache/huggingface
       HUGGINGFACE_HUB_CACHE: /workspace/.cache/huggingface
     depends_on:
       postgres:

@@ -128,7 +128,7 @@ class DatabaseManager:
         try:
             async with self.engine.begin() as conn:
                 result = await conn.execute(text("SELECT version()"))
-                version_info = await result.fetchone()
+                version_info = result.fetchone()  # Remove 'await' here!
                 
                 driver_name = conn.engine.url.drivername
                 logger.info(f"✅ Database connection verified using driver: {driver_name}")

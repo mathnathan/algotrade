@@ -3,6 +3,7 @@
     "dockerComposeFile": "../docker-compose.yml",
     "service": "trading-bot",
     "workspaceFolder": "/workspace",
+    "postCreateCommand": "uv sync --extra dev",
     "customizations": {
         "vscode": {
             "extensions": [

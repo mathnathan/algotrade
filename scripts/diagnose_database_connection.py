@@ -1,144 +1,154 @@
-# scripts/diagnose_database_connection.py
+# scripts/enhanced_database_diagnostics.py
 """
-Diagnostic script to troubleshoot database connection and driver issues.
+Database diagnostic script with detailed error reporting.
 
-This helps us understand exactly what SQLAlchemy is seeing and why it's
-choosing the wrong driver.
+This script helps you understand exactly what's happening with your database
+connections and provides actionable insights for troubleshooting.
 """
 
-import os
+import asyncio
 import sys
 from pathlib import Path
+
+from sqlalchemy import text
+
+from src.config.logging import setup_logging
+from src.database.connection import db_manager
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-
-def check_environment():
-    """Check environment variables and their values."""
-    print("🔍 Environment Diagnostic")
-    print("=" * 50)
-
-    database_url = os.getenv("DATABASE_URL")
-    print(f"DATABASE_URL from environment: {database_url}")
-
-    if not database_url:
-        print("❌ DATABASE_URL not set in environment")
-        print("💡 Tip: Create a .env file or set the environment variable")
-        return False
-
-    return True
+logger = setup_logging()
 
 
-def check_drivers():
-    """Check which database drivers are available."""
-    print("\n🚗 Driver Availability Check")
-    print("=" * 50)
+async def comprehensive_database_test():
+    """
+    Run comprehensive database diagnostics with detailed reporting.
 
-    # Check asyncpg (what we want)
-    try:
-        import asyncpg
-
-        print(f"✅ asyncpg available: version {asyncpg.__version__}")
-        asyncpg_available = True
-    except ImportError as e:
-        print(f"❌ asyncpg not available: {e}")
-        asyncpg_available = False
-
-    # Check psycopg2 (what's being used incorrectly)
-    try:
-        import psycopg2
-
-        print(f"⚠️  psycopg2 available: version {psycopg2.__version__}")
-        print("   (This is the synchronous driver that's causing conflicts)")
-        psycopg2_available = True
-    except ImportError:
-        print("✅ psycopg2 not available (this is fine for async operations)")
-        psycopg2_available = False
-
-    return asyncpg_available, psycopg2_available
-
-
-def check_sqlalchemy_url_parsing():
-    """Test how SQLAlchemy parses different connection string formats."""
-    print("\n🔗 Connection String Parsing Test")
-    print("=" * 50)
-
-    try:
-        from sqlalchemy import make_url
-
-        test_urls = [
-            "postgresql://trading_user:secure_trading_password@localhost:5433/trading_db",
-            "postgresql+asyncpg://trading_user:secure_trading_password@localhost:5433/trading_db",
-            "postgresql+psycopg2://trading_user:secure_trading_password@localhost:5433/trading_db",
-        ]
-
-        for url_string in test_urls:
-            try:
-                parsed_url = make_url(url_string)
-                print(f"URL: {url_string}")
-                print(f"  Drivername: {parsed_url.drivername}")
-                print(f"  Driver: {parsed_url.get_driver_name()}")
-                print()
-            except Exception as e:
-                print(f"❌ Failed to parse {url_string}: {e}")
-
-    except ImportError as e:
-        print(f"❌ Cannot import SQLAlchemy: {e}")
-
-
-def check_settings_loading():
-    """Check how our settings are loading the database URL."""
-    print("\n⚙️  Settings Loading Test")
-    print("=" * 50)
-
-    try:
-        from src.config.settings import settings
-
-        print(f"Settings database_url: {settings.database_url}")
-
-        # Test the URL transformation logic
-        original_url = settings.database_url
-        if "postgresql://" in original_url and "+asyncpg" not in original_url:
-            transformed_url = original_url.replace("postgresql://", "postgresql+asyncpg://")
-            print(f"Original URL: {original_url}")
-            print(f"Transformed URL: {transformed_url}")
-        else:
-            print("URL already contains asyncpg driver specification")
-
-    except Exception as e:
-        print(f"❌ Failed to load settings: {e}")
-
-
-def main():
-    """Run all diagnostic checks."""
-    print("🩺 Database Connection Diagnostic Tool")
+    Think of this as a full trading system pre-flight checklist - we test
+    every component that your algorithmic trading system depends on.
+    """
+    print("🔍 Starting Comprehensive Database Diagnostics")
     print("=" * 60)
 
-    env_ok = check_environment()
-    asyncpg_available, psycopg2_available = check_drivers()
-    check_sqlalchemy_url_parsing()
-    check_settings_loading()
+    test_results = {
+        "basic_connection": False,
+        "session_management": False,
+        "transaction_handling": False,
+        "concurrent_sessions": False,
+        "error_recovery": False,
+    }
 
-    print("\n📋 Summary and Recommendations")
-    print("=" * 50)
+    # Test 1: Basic Connection
+    print("\n1️⃣ Testing Basic Connection...")
+    try:
+        connection_ok = await db_manager.test_connection()
+        test_results["basic_connection"] = connection_ok
+        print(
+            f"   {'✅' if connection_ok else '❌'} Basic connection: {'PASS' if connection_ok else 'FAIL'}"
+        )
 
-    if not env_ok:
-        print("❌ Environment setup issues detected")
-        return False
+        if connection_ok:
+            pool_status = await db_manager.get_pool_status()
+            print(f"   📊 Pool status: {pool_status}")
 
-    if not asyncpg_available:
-        print("❌ asyncpg driver not available - install it first")
-        return False
+    except Exception as e:
+        print(f"   ❌ Basic connection failed: {type(e).__name__}: {e}")
 
-    if psycopg2_available:
-        print("⚠️  Both sync and async drivers present - this can cause conflicts")
-        print("💡 Consider removing psycopg2-binary if you only need async operations")
+    # Test 2: Session Management
+    print("\n2️⃣ Testing Session Management...")
+    try:
+        async with db_manager.get_session() as session:
+            result = await session.execute(text("SELECT 'Session test successful' as message"))
+            message = result.scalar()
+            test_results["session_management"] = message == "Session test successful"
+            print("   ✅ Session management: PASS")
+            print(f"   📝 Session details: ID={id(session)}, Active={session.is_active}")
 
-    print("✅ Basic setup looks good - checking URL transformation logic...")
-    return True
+    except Exception as e:
+        print(f"   ❌ Session management failed: {type(e).__name__}: {e}")
+        import traceback
+
+        traceback.print_exc()
+
+    # Test 3: Transaction Handling
+    print("\n3️⃣ Testing Transaction Handling...")
+    try:
+        async with db_manager.get_session() as session:
+            # Test that we can handle transactions properly
+            await session.execute(text("CREATE TEMP TABLE test_tx AS SELECT 1 as test_col"))
+            result = await session.execute(text("SELECT test_col FROM test_tx"))
+            test_value = result.scalar()
+
+            test_results["transaction_handling"] = test_value == 1
+            print("   ✅ Transaction handling: PASS")
+
+    except Exception as e:
+        print(f"   ❌ Transaction handling failed: {type(e).__name__}: {e}")
+
+    # Test 4: Concurrent Sessions
+    print("\n4️⃣ Testing Concurrent Sessions...")
+    try:
+
+        async def concurrent_query(session_id: int):
+            async with db_manager.get_session() as session:
+                await session.execute(text(f"SELECT {session_id} as session_id"))
+                return session_id
+
+        # Run 5 concurrent sessions
+        tasks = [concurrent_query(i) for i in range(5)]
+        results = await asyncio.gather(*tasks)
+
+        test_results["concurrent_sessions"] = len(results) == 5
+        print(f"   ✅ Concurrent sessions: PASS ({len(results)}/5 sessions completed)")
+
+    except Exception as e:
+        print(f"   ❌ Concurrent sessions failed: {type(e).__name__}: {e}")
+
+    # Test 5: Error Recovery
+    print("\n5️⃣ Testing Error Recovery...")
+    try:
+        # Test that errors don't leave sessions in bad state
+        try:
+            async with db_manager.get_session() as session:
+                # Intentionally cause an error
+                await session.execute(text("SELECT * FROM nonexistent_table"))
+        except Exception as e:
+            logger.debug(f"Expected error during error recovery test: {type(e).__name__}: {e}")
+
+        # Now test that we can still use the database normally
+        async with db_manager.get_session() as session:
+            result = await session.execute(text("SELECT 'Recovery successful' as message"))
+            message = result.scalar()
+            test_results["error_recovery"] = message == "Recovery successful"
+            print("   ✅ Error recovery: PASS")
+
+    except Exception as e:
+        print(f"   ❌ Error recovery failed: {type(e).__name__}: {e}")
+
+    # Summary
+    print("\n" + "=" * 60)
+    print("📊 DIAGNOSTIC SUMMARY")
+    print("=" * 60)
+
+    passed_tests = sum(test_results.values())
+    total_tests = len(test_results)
+
+    for test_name, passed in test_results.items():
+        status = "✅ PASS" if passed else "❌ FAIL"
+        print(f"   {test_name.replace('_', ' ').title()}: {status}")
+
+    print(f"\n🎯 Overall Result: {passed_tests}/{total_tests} tests passed")
+
+    if passed_tests == total_tests:
+        print("🎉 All database tests passed! Your system is ready for trading operations.")
+    else:
+        print("⚠️  Some tests failed. Review the errors above before proceeding.")
+
+    return passed_tests == total_tests
 
 
 if __name__ == "__main__":
-    main()
+    success = asyncio.run(comprehensive_database_test())
+    sys.exit(0 if success else 1)

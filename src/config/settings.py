@@ -1,7 +1,11 @@
+# src/config/settings.py
+
 from pathlib import Path
 from dataclasses import dataclass
-from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 
 @dataclass
@@ -113,15 +117,70 @@ class TradingConfig:
     order_type: str = "market"           # Start with market orders for simplicity
     time_in_force: str = "day"           # Day orders only
 
+class DatabaseConfig(BaseSettings):
+    """
+    Database configuration with intelligent defaults for trading environments.
+    
+    This configuration class handles all the complexity of database URLs,
+    connection parameters, and environment-specific settings in one place.
+    """
+    
+    # Core connection parameters
+    host: str = Field("localhost", env="DB_HOST")
+    port: int = Field(5432, env="DB_PORT")
+    database: str = Field("trading_db", env="DB_DATABASE")
+    username: str = Field("trading_user", env="DB_USERNAME")
+    password: str = Field(..., env="DB_PASSWORD")  # Required
+    
+    # Connection pool settings optimized for trading workloads
+    pool_size: int = Field(10, env="DB_POOL_SIZE")
+    max_overflow: int = Field(15, env="DB_MAX_OVERFLOW")
+    pool_timeout: int = Field(30, env="DB_POOL_TIMEOUT")
+    pool_recycle: int = Field(3600, env="DB_POOL_RECYCLE")
+    
+    # Retry and resilience settings
+    connection_retries: int = Field(3, env="DB_CONNECTION_RETRIES")
+    retry_delay: float = Field(1.0, env="DB_RETRY_DELAY")
+    health_check_interval: int = Field(60, env="DB_HEALTH_CHECK_INTERVAL")
+    
+    # Performance and monitoring settings
+    enable_query_logging: bool = Field(False, env="DB_ENABLE_QUERY_LOGGING")
+    slow_query_threshold: float = Field(0.1, env="DB_SLOW_QUERY_THRESHOLD")
+    enable_metrics: bool = Field(True, env="DB_ENABLE_METRICS")
+    
+    @validator('password')
+    def password_must_be_secure(cls, v):
+        if len(v) < 12:
+            raise ValueError('Database password must be at least 12 characters for security')
+        return v
+    
+    @validator('pool_size')
+    def pool_size_reasonable(cls, v):
+        if v > 50:
+            raise ValueError('Pool size over 50 may consume excessive resources')
+        return v
+    
+    @property
+    def async_url(self) -> str:
+        """Generate the async database URL with proper escaping and driver specification."""
+        return f"postgresql+asyncpg://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"
+    
+    @property
+    def masked_url(self) -> str:
+        """Generate a URL safe for logging with password masked."""
+        return f"postgresql+asyncpg://{self.username}:***@{self.host}:{self.port}/{self.database}"
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = False
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
-    
-    # Database Configuration
-    trading_db_name: str = Field("trading_db", env="TRADING_DB_NAME")
-    trading_db_user: str = Field("trading_user", env="TRADING_DB_USER")
-    trading_db_password: str = Field("secure_trading_password", env="TRADING_DB_PASSWORD")
 
+    # Database Configuration
+    database: DatabaseConfig = DatabaseConfig()
+    
     # Dynamically construct the database URL
     @property
     def database_url(self) -> str:
@@ -156,7 +215,7 @@ class Settings(BaseSettings):
     model: ModelConfig = ModelConfig()
     news: NewsConfig = NewsConfig()
     trading: TradingConfig = TradingConfig()
-    
+
     # Logging Configuration
     log_level: str = Field("INFO")
     log_file: Path = Field(Path("./logs/trading.log"))

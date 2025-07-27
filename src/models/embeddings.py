@@ -6,11 +6,6 @@ import numpy as np
 class UnifiedTemporalEmbedding(nn.Module):
     """
     A temporal embedding system designed for multimodal financial data.
-    
-    Think of this as creating a shared "timeline" that both price data 
-    and news articles can be positioned on with precise temporal accuracy.
-    This allows cross-attention mechanisms to understand not just what 
-    happened, but exactly when it happened relative to everything else.
     """
     
     def __init__(self, d_model, max_sequence_length=2000):

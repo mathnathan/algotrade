@@ -2,11 +2,8 @@
 
 from pathlib import Path
 from dataclasses import dataclass
-
-from pydantic import Field
+from pydantic import BaseModel, Field, validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-
 
 @dataclass
 class ModelConfig:
@@ -117,119 +114,77 @@ class TradingConfig:
     order_type: str = "market"           # Start with market orders for simplicity
     time_in_force: str = "day"           # Day orders only
 
-class DatabaseConfig(BaseSettings):
-    """
-    Database configuration with intelligent defaults for trading environments.
-    
-    This configuration class handles all the complexity of database URLs,
-    connection parameters, and environment-specific settings in one place.
-    """
-    
-    # Core connection parameters
-    host: str = Field("localhost", env="DB_HOST")
-    port: int = Field(5432, env="DB_PORT")
-    database: str = Field("trading_db", env="DB_DATABASE")
-    username: str = Field("trading_user", env="DB_USERNAME")
-    password: str = Field(..., env="DB_PASSWORD")  # Required
-    
-    # Connection pool settings optimized for trading workloads
-    pool_size: int = Field(10, env="DB_POOL_SIZE")
-    max_overflow: int = Field(15, env="DB_MAX_OVERFLOW")
-    pool_timeout: int = Field(30, env="DB_POOL_TIMEOUT")
-    pool_recycle: int = Field(3600, env="DB_POOL_RECYCLE")
-    
-    # Retry and resilience settings
-    connection_retries: int = Field(3, env="DB_CONNECTION_RETRIES")
-    retry_delay: float = Field(1.0, env="DB_RETRY_DELAY")
-    health_check_interval: int = Field(60, env="DB_HEALTH_CHECK_INTERVAL")
-    
-    # Performance and monitoring settings
-    enable_query_logging: bool = Field(False, env="DB_ENABLE_QUERY_LOGGING")
-    slow_query_threshold: float = Field(0.1, env="DB_SLOW_QUERY_THRESHOLD")
-    enable_metrics: bool = Field(True, env="DB_ENABLE_METRICS")
-    
-    @validator('password')
-    def password_must_be_secure(cls, v):
-        if len(v) < 12:
-            raise ValueError('Database password must be at least 12 characters for security')
-        return v
-    
-    @validator('pool_size')
-    def pool_size_reasonable(cls, v):
-        if v > 50:
-            raise ValueError('Pool size over 50 may consume excessive resources')
-        return v
-    
+class DatabaseConfig(BaseModel):
+    """Database connection settings."""
+    host: str = "postgres"
+    port: int = 5432
+    name: str = Field("trading_db", alias="DB_TRADING_DB_NAME")
+    user: str = Field(..., alias="DB_TRADING_USER_NAME")
+    password: str = Field(..., alias="DB_TRADING_USER_PASSWORD")
+
     @property
     def async_url(self) -> str:
-        """Generate the async database URL with proper escaping and driver specification."""
-        return f"postgresql+asyncpg://{self.username}:{self.password}@{self.host}:{self.port}/{self.database}"
-    
+        """Generate the async database URL."""
+        return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+
     @property
     def masked_url(self) -> str:
-        """Generate a URL safe for logging with password masked."""
-        return f"postgresql+asyncpg://{self.username}:***@{self.host}:{self.port}/{self.database}"
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+        """Generate a URL safe for logging."""
+        return f"postgresql+asyncpg://{self.user}:***@{self.host}:{self.port}/{self.name}"
 
+class AlpacaConfig(BaseModel):
+    """Alpaca API settings."""
+    # Secrets loaded from .env
+    paper_api_key_id: str = Field(..., alias="APCA_PAPER_API_KEY_ID")
+    paper_api_secret_key: str = Field(..., alias="APCA_PAPER_API_SECRET_KEY")
+    live_api_key_id: str = Field(..., alias="APCA_LIVE_API_KEY_ID")
+    live_api_secret_key: str = Field(..., alias="APCA_LIVE_API_SECRET_KEY")
+
+    # Non-secrets with hardcoded defaults
+    paper_base_url: str = "https://paper-api.alpaca.markets/v2"
+    live_base_url: str = "https://api.alpaca.markets/v2"
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
-
-    # Database Configuration
-    database: DatabaseConfig = DatabaseConfig()
+    """
+    Main application settings.
+    Loads secrets from .env and defines all other configuration directly.
+    """
     
-    # Dynamically construct the database URL
-    @property
-    def database_url(self) -> str:
-        return (
-            f"postgresql+asyncpg://{self.trading_db_user}:"
-            f"{self.trading_db_password}@"
-            f"postgres:"
-            f"5432/"
-            f"{self.trading_db_name}"
-        )
-    
-    # Alpaca API Configuration
-    # PAPER CONFIGURATION
-    apca_paper_api_key_id: str = Field(..., env="APCA_PAPER_API_KEY_ID")
-    apca_paper_api_secret_key: str = Field(..., env="APCA_PAPER_API_SECRET_KEY") 
-    apca_paper_base_url: str = Field("https://paper-api.alpaca.markets/v2")
-
-    # LIVE CONFIGURATION
-    apca_live_api_key_id: str = Field(..., env="APCA_LIVE_API_KEY_ID")
-    apca_live_api_secret_key: str = Field(..., env="APCA_LIVE_API_SECRET_KEY") 
-    apca_live_base_url: str = Field("https://api.alpaca.markets/v2")
-
-    # Alpaca Trading Configuration
-    paper: bool = Field(True, env="PAPER")  # Use paper trading by default
-    
-    # Model Configuration
-    huggingface_cache_dir: Path = Field(env="HF_HOME")
-    huggingface_hub_token: str = Field(env="HUGGINGFACE_HUB_TOKEN")
-    embedding_model: str = Field("sentence-transformers/all-MiniLM-L6-v2")
-    
-    # Trading Configuration
-    model: ModelConfig = ModelConfig()
-    news: NewsConfig = NewsConfig()
-    trading: TradingConfig = TradingConfig()
-
-    # Logging Configuration
-    log_level: str = Field("INFO")
-    log_file: Path = Field(Path("./logs/trading.log"))
-
-    # Model persistence
-    model_save_path: Path = Field(Path("./models"))
-    checkpoint_frequency: int = Field(10)  # Save every N epochs
-    
-    # Save configurations
+    # Configuration for pydantic-settings to load from a .env file
+    # extra='ignore' is crucial: it prevents errors if .env contains variables
+    # not defined in this model (e.g., PAPER=true, comments).
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,
         extra="ignore",
     )
 
-# Global settings instance
+    # --- Nested Configuration Models ---
+    # Pydantic will automatically populate these nested models
+    # using the aliases defined within them.
+    database: DatabaseConfig
+    alpaca: AlpacaConfig
+
+    # --- Other Application Settings (non-secrets with defaults) ---
+    paper: bool = Field(True, alias="PAPER")
+    
+    # Huggingface secrets and configs
+    huggingface_hub_token: str = Field(..., alias="HUGGINGFACE_HUB_TOKEN")
+    huggingface_cache_dir: Path = Path("/app/.cache/huggingface")
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    
+    # Logging Configuration
+    log_level: str = "INFO"
+    log_file: Path = Path("./logs/trading.log")
+
+    # Model Persistence
+    model_save_path: Path = Path("./models")
+    checkpoint_frequency: int = 10
+
+    # Static Configurations (using the dataclasses from above)
+    model: ModelConfig = ModelConfig()
+    news: NewsConfig = NewsConfig()
+    trading: TradingConfig = TradingConfig()
+
+# Global settings instance, ready to be imported across the application
 settings = Settings()

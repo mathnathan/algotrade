@@ -8,8 +8,6 @@ before dealing with container complexity.
 
 import sys
 from pathlib import Path
-import asyncio
-import logging
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -24,17 +22,17 @@ def test_alembic_initialization():
     """Test that Alembic initialization works correctly."""
     try:
         logger.info("🧪 Testing Alembic initialization...")
-        
+
         # Test initialization
         result = init_alembic()
-        
+
         if result:
             logger.info("✅ Alembic initialization test passed")
-            
+
             # Verify files were created
             alembic_dir = project_root / "alembic"
             alembic_ini = project_root / "alembic.ini"
-            
+
             if alembic_dir.exists() and alembic_ini.exists():
                 logger.info("✅ Alembic files created successfully")
                 logger.info(f"📁 {alembic_dir}")
@@ -42,9 +40,9 @@ def test_alembic_initialization():
             else:
                 logger.error("❌ Alembic files not found after initialization")
                 return False
-                
+
         return True
-        
+
     except Exception as e:
         logger.error(f"❌ Alembic initialization test failed: {e}")
         return False

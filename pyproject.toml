@@ -23,14 +23,15 @@ dependencies = [
     "huggingface-hub>=0.33.1",
     "sqlalchemy>=2.0.41",
     "alembic>=1.16.2",
+    "types-pytz>=2025.2.0.20250516",
 ]
 
 [project.optional-dependencies]
 dev = [
     "jupyter>=1.0.0",
     "pytest>=7.4.0",
-    "black>=23.9.0",
-    "isort>=5.12.0"
+    "isort>=5.12.0",
+    "ruff>=0.12.5",
 ]
 
 [build-system]
@@ -41,10 +42,85 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
 
-[tool.uv]
-dev-dependencies = [
-    "jupyter>=1.0.0",
-    "pytest>=7.4.0",
-    "black>=23.9.0",
-    "isort>=5.12.0"
+[tool.ruff]
+# Target Python 3.11+ for modern async features critical in trading
+target-version = "py311"
+line-length = 100
+indent-width = 4
+
+# Include common trading project structure
+extend-include = ["*.ipynb"]
+extend-exclude = [
+    "__pycache__",
+    ".pytest_cache",
+    "logs/",
+    "data/",
+    "models/",
+    ".env*"
 ]
+
+[tool.ruff.lint]
+# Enable essential rule sets for financial applications
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings  
+    "F",    # Pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear (critical for avoiding trading bugs)
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "RUF",  # Ruff-specific rules
+    "N",    # pep8-naming
+    "S",    # flake8-bandit (security - important for API keys)
+    "T20",  # flake8-print (catch debug prints before production)
+    "PIE",  # flake8-pie
+    "SIM",  # flake8-simplify
+]
+
+ignore = [
+    "S101",   # assert statements (common in tests)
+    "S301",   # pickle usage (needed for model serialization)
+    "T201",   # print statements (useful during development)
+    "E501",   # line too long (handled by formatter)
+]
+
+exclude = [
+    "*.ipynb",
+]
+
+# Trading-specific configurations
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S106"]  # Allow asserts and hardcoded passwords in tests
+"scripts/*" = ["T201"]        # Allow prints in utility scripts
+"notebooks/*" = ["T201", "E402"]  # Relaxed rules for exploration notebooks
+
+[tool.ruff.lint.isort]
+known-first-party = ["src", "trading_bot"]
+force-single-line = false
+combine-as-imports = true
+
+[tool.ruff.format]
+# Format settings optimized for financial code readability
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+exclude = [
+    "*.ipynb",
+]
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pydantic-mypy]
+# Prohibit passing extra arguments to `__init__` that are not defined in the model
+init_forbid_extra = true
+
+# Ensure that `__init__` arguments are type-checked
+init_typed = true
+
+# Warn about fields that are required but have dynamic aliases
+warn_required_dynamic_aliases = true

@@ -6,13 +6,14 @@ This file configures how database migrations are executed, ensuring
 your trading system's database schema evolves safely and predictably.
 """
 
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from alembic import context
 import os
 import sys
+from logging.config import fileConfig
 from pathlib import Path
+
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 # Add the project root to Python path so we can import our models
 project_root = Path(__file__).parent.parent
@@ -20,8 +21,6 @@ sys.path.insert(0, str(project_root))
 
 # Import our models so Alembic can detect schema changes
 from src.data.base import Base
-from src.data.price_data import HistoricalPrice  
-from src.data.news_data import HistoricalNews
 
 # This is the Alembic Config object, which provides access to configuration values
 config = context.config
@@ -37,7 +36,7 @@ target_metadata = Base.metadata
 def run_migrations_offline():
     """
     Run migrations in 'offline' mode.
-    
+
     This generates SQL scripts without connecting to a database.
     Useful for generating migration files that can be reviewed before execution.
     """
@@ -55,7 +54,7 @@ def run_migrations_offline():
 def run_migrations_online():
     """
     Run migrations in 'online' mode.
-    
+
     Creates a database connection and executes migrations directly.
     This is what happens when your trading system starts up.
     """
@@ -64,7 +63,7 @@ def run_migrations_online():
     database_url = os.getenv("DATABASE_URL")
     if database_url:
         config.set_main_option("sqlalchemy.url", database_url)
-    
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",
@@ -73,7 +72,7 @@ def run_migrations_online():
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, 
+            connection=connection,
             target_metadata=target_metadata
         )
 

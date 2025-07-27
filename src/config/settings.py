@@ -1,9 +1,11 @@
 # src/config/settings.py
 
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 @dataclass
 class ModelConfig:
@@ -23,20 +25,30 @@ class ModelConfig:
     early_stopping_patience: int = 10
     validation_split: float = 0.2
 
+
 @dataclass
 class NewsConfig:
-    include_sources: list[str] = None
-    exclude_sources: list[str] = None
-    news_keywords_macro: list[str] = None
-    news_keywords_financial: list[str] = None
+    include_sources: list[str] | None = None
+    exclude_sources: list[str] | None = None
+    news_keywords_macro: list[str] | None = None
+    news_keywords_financial: list[str] | None = None
     max_news_per_day: int = 50
     min_headline_length: int = 10
-    
+
     def __post_init__(self):
         if self.news_keywords_macro is None:
-            self.news_keywords_macro = ["federal reserve", "fed", "inflation"] # Truncated for brevity
+            self.news_keywords_macro = [
+                "federal reserve",
+                "fed",
+                "inflation",
+            ]  # Truncated for brevity
         if self.news_keywords_financial is None:
-            self.news_keywords_financial = ["earnings", "revenue", "profit"] # Truncated for brevity
+            self.news_keywords_financial = [
+                "earnings",
+                "revenue",
+                "profit",
+            ]  # Truncated for brevity
+
 
 @dataclass
 class TradingConfig:
@@ -56,40 +68,46 @@ class TradingConfig:
     order_type: str = "market"
     time_in_force: str = "day"
 
+
 class DatabaseConfig(BaseSettings):
     """Database connection settings that loads secrets from .env."""
-    
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        case_sensitive=False,
-        extra="ignore" # Ignore other variables in the .env file
-    )
-    
+
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
+
     # Non-secret defaults
     host: str = "postgres"
     port: int = 5432
-    
+
     # Secrets to be loaded from .env using aliases
     name: str = Field("trading_db", alias="DB_TRADING_DB_NAME")
     user: str = Field(..., alias="DB_TRADING_USER_NAME")
     password: str = Field(..., alias="DB_TRADING_USER_PASSWORD")
 
+    # Additional database config with reasonable defaults
+    pool_size: int = 5
+    max_overflow: int = 10
+    pool_timeout: int = 30
+    pool_recycle: int = 1800
+    enable_query_logging: bool = False
+    connection_retries: int = 5
+    retry_delay: int = 2
+    health_check_interval: int = 30
+
     @property
     def async_url(self) -> str:
-        return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+        return (
+            f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+        )
 
     @property
     def masked_url(self) -> str:
         return f"postgresql+asyncpg://{self.user}:***@{self.host}:{self.port}/{self.name}"
 
+
 class AlpacaConfig(BaseSettings):
     """Alpaca API settings that loads secrets from .env."""
-    
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        case_sensitive=False,
-        extra="ignore"
-    )
+
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
     # Secrets loaded from .env
     paper_api_key_id: str = Field(..., alias="APCA_PAPER_API_KEY_ID")
@@ -102,9 +120,20 @@ class AlpacaConfig(BaseSettings):
     live_base_url: str = "https://api.alpaca.markets/v2"
 
 
+class HuggingfaceConfig(BaseSettings):
+    """Huggingface settings that loads secrets from .env."""
+
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
+
+    # Secrets loaded from .env
+    huggingface_hub_token: str = Field(..., alias="HUGGINGFACE_HUB_TOKEN")
+    cache_dir: Path = Path("/app/.cache/huggingface")
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+
+
 class Settings(BaseSettings):
     """Main application settings orchestrator."""
-    
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,
@@ -117,12 +146,10 @@ class Settings(BaseSettings):
 
     # --- Other Application Settings ---
     paper_trading: bool = Field(True, alias="PAPER")
-    
+
     # Huggingface secrets and configs
-    huggingface_hub_token: str = Field(..., alias="HUGGINGFACE_HUB_TOKEN")
-    huggingface_cache_dir: Path = Path("/app/.cache/huggingface")
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    
+    huggingface: HuggingfaceConfig = HuggingfaceConfig()
+
     # Logging, Persistence, and static configs
     log_level: str = "INFO"
     log_file: Path = Path("./logs/trading.log")

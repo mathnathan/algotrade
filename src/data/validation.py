@@ -5,9 +5,9 @@ This ensures that only valid, sensible market data reaches your trading algorith
 """
 # Python imports
 import datetime
-from decimal import Decimal
-from typing import Optional, Any
 import logging
+from decimal import Decimal
+from typing import Any
 
 # Third-party imports
 from pydantic import BaseModel, Field, validator
@@ -17,11 +17,11 @@ logger = logging.getLogger(__name__)
 class ValidatedPrice(BaseModel):
     """
     Pydantic model for validating historical price data from Alpaca API.
-    
+
     This model ensures that price data makes logical sense within financial
     market constraints before it reaches your database.
     """
-    
+
     symbol: str = Field(..., regex=r'^[A-Z]{1,10}$', description="Valid stock symbol")
     timestamp: datetime = Field(..., description="Price observation timestamp")
     open: Decimal = Field(..., ge=0, description="Opening price")
@@ -30,17 +30,17 @@ class ValidatedPrice(BaseModel):
     close: Decimal = Field(..., ge=0, description="Closing price")
     volume: int = Field(..., ge=0, description="Trading volume")
     trade_count: int = Field(..., ge=0, description="Number of trades")
-    vwap: Optional[Decimal] = Field(None, ge=0, description="Volume weighted average price")
-    
+    vwap: Decimal | None = Field(None, ge=0, description="Volume weighted average price")
+
     @validator('timestamp')
-    def timestamp_must_have_timezone(cls, v):
+    def timestamp_must_have_timezone(self, v):
         """Ensure all timestamps include timezone information."""
         if v.tzinfo is None:
             raise ValueError('Timestamp must include timezone information')
         return v
-    
+
     @validator('high')
-    def high_must_be_highest(cls, v, values):
+    def high_must_be_highest(self, v, values):
         """Validate that high price is actually the highest price of the period."""
         if 'open' in values and v < values['open']:
             raise ValueError('High price cannot be less than open price')
@@ -49,9 +49,9 @@ class ValidatedPrice(BaseModel):
         if 'close' in values and v < values['close']:
             raise ValueError('High price cannot be less than close price')
         return v
-    
+
     @validator('low')
-    def low_must_be_lowest(cls, v, values):
+    def low_must_be_lowest(self, v, values):
         """Validate that low price is actually the lowest price of the period."""
         if 'open' in values and v > values['open']:
             raise ValueError('Low price cannot be greater than open price')
@@ -60,9 +60,9 @@ class ValidatedPrice(BaseModel):
         if 'close' in values and v > values['close']:
             raise ValueError('Low price cannot be greater than close price')
         return v
-    
+
     @validator('vwap')
-    def vwap_must_be_reasonable(cls, v, values):
+    def vwap_must_be_reasonable(self, v, values):
         """Validate that VWAP falls within the high-low range."""
         if v is None:
             return v
@@ -70,14 +70,14 @@ class ValidatedPrice(BaseModel):
             if not (values['low'] <= v <= values['high']):
                 raise ValueError('VWAP must fall between low and high prices')
         return v
-    
+
     @validator('volume')
-    def volume_must_be_reasonable(cls, v, values):
+    def volume_must_be_reasonable(self, v, values):
         """Validate that volume is within reasonable bounds for equity markets."""
         if v > 10_000_000_000:  # 10 billion shares seems unreasonable
             raise ValueError('Volume appears unreasonably high')
         return v
-    
+
     class Config:
         # Allow decimal types to be properly handled
         json_encoders = {
@@ -88,56 +88,56 @@ class ValidatedPrice(BaseModel):
 class ValidatedNews(BaseModel):
     """
     Pydantic model for validating news data from Alpaca API.
-    
+
     This ensures that news data has all required fields and makes logical sense
     before being stored in your database.
     """
-    
+
     id: int = Field(..., description="Unique news article ID")
     headline: str = Field(..., min_length=1, max_length=1000, description="Article headline")
-    summary: Optional[str] = Field(None, max_length=5000, description="Article summary")
-    content: Optional[str] = Field(None, max_length=50000, description="Full article content")
-    source: Optional[str] = Field(None, max_length=100, description="News source")
-    author: Optional[str] = Field(None, max_length=200, description="Article author")
-    url: Optional[str] = Field(None, description="Link to full article")
+    summary: str | None = Field(None, max_length=5000, description="Article summary")
+    content: str | None = Field(None, max_length=50000, description="Full article content")
+    source: str | None = Field(None, max_length=100, description="News source")
+    author: str | None = Field(None, max_length=200, description="Article author")
+    url: str | None = Field(None, description="Link to full article")
     created_at: datetime = Field(..., description="Publication timestamp")
     updated_at: datetime = Field(..., description="Last modification timestamp")
-    symbols: Optional[list[str]] = Field(None, description="Associated stock symbols")
-    images: Optional[dict[str, Any]] = Field(None, description="Associated images")
-    sentiment: Optional[float] = Field(None, ge=-1.0, le=1.0, description="Sentiment score")
-    
+    symbols: list[str] | None = Field(None, description="Associated stock symbols")
+    images: dict[str, Any] | None = Field(None, description="Associated images")
+    sentiment: float | None = Field(None, ge=-1.0, le=1.0, description="Sentiment score")
+
     @validator('created_at', 'updated_at')
-    def timestamps_must_have_timezone(cls, v):
+    def timestamps_must_have_timezone(self, v):
         """Ensure all timestamps include timezone information."""
         if v.tzinfo is None:
             raise ValueError('Timestamps must include timezone information')
         return v
-    
+
     @validator('symbols')
-    def symbols_must_be_valid(cls, v):
+    def symbols_must_be_valid(self, v):
         """Validate that stock symbols follow expected format."""
         if v is None:
             return v
-        
+
         for symbol in v:
             if not isinstance(symbol, str) or not symbol.isupper() or len(symbol) > 10:
                 raise ValueError(f'Invalid symbol format: {symbol}')
-        
+
         return v
-    
+
     @validator('url')
-    def url_must_be_valid(cls, v):
+    def url_must_be_valid(self, v):
         """Basic URL validation for news links."""
         if v is None:
             return v
-        
+
         if not v.startswith(('http://', 'https://')):
             raise ValueError('URL must start with http:// or https://')
-        
+
         return v
-    
+
     @validator('headline', 'summary', 'content')
-    def text_fields_must_not_be_empty(cls, v):
+    def text_fields_must_not_be_empty(self, v):
         """Ensure text fields are not just whitespace."""
         if v is not None and v.strip() == '':
             raise ValueError('Text fields cannot be empty or just whitespace')
@@ -146,52 +146,52 @@ class ValidatedNews(BaseModel):
 class DataValidator:
     """
     Service class for validating and cleaning market data before database insertion.
-    
+
     This provides a centralized location for all validation logic and makes it
     easy to add new validation rules as your trading system evolves.
     """
-    
+
     def __init__(self):
         self.validation_errors = []
         self.processed_count = 0
         self.error_count = 0
-    
-    def validate_price_data(self, raw_data: dict[str, Any]) -> Optional[ValidatedPrice]:
+
+    def validate_price_data(self, raw_data: dict[str, Any]) -> ValidatedPrice | None:
         """
         Validate and clean price data from Alpaca API.
-        
+
         Returns None if validation fails, otherwise returns validated price data.
         """
         try:
             validated = ValidatedPrice(**raw_data)
             self.processed_count += 1
             return validated
-            
+
         except Exception as e:
             self.error_count += 1
             error_msg = f"Price validation failed for {raw_data.get('symbol', 'unknown')}: {e}"
             logger.warning(error_msg)
             self.validation_errors.append(error_msg)
             return None
-    
-    def validate_news_data(self, raw_data: dict[str, Any]) -> Optional[ValidatedNews]:
+
+    def validate_news_data(self, raw_data: dict[str, Any]) -> ValidatedNews | None:
         """
         Validate and clean news data from Alpaca API.
-        
+
         Returns None if validation fails, otherwise returns validated news data.
         """
         try:
             validated = ValidatedNews(**raw_data)
             self.processed_count += 1
             return validated
-            
+
         except Exception as e:
             self.error_count += 1
             error_msg = f"News validation failed for article {raw_data.get('id', 'unknown')}: {e}"
             logger.warning(error_msg)
             self.validation_errors.append(error_msg)
             return None
-    
+
     def get_validation_stats(self) -> dict[str, Any]:
         """Get statistics about validation performance."""
         return {
@@ -200,7 +200,7 @@ class DataValidator:
             'error_rate': self.error_count / max(self.processed_count, 1),
             'recent_errors': self.validation_errors[-10:]  # Last 10 errors
         }
-    
+
     def reset_stats(self) -> None:
         """Reset validation statistics."""
         self.validation_errors.clear()

@@ -7,7 +7,7 @@ Each class attribute becomes a database column with proper types and constraints
 """
 
 from src.data.base import Base
-from src.data.price_data import HistoricalPrice  
 from src.data.news_data import HistoricalNews
+from src.data.price_data import HistoricalPrice
 
-__all__ = ["Base", "HistoricalPrice", "HistoricalNews"]
+__all__ = ["Base", "HistoricalNews", "HistoricalPrice"]

@@ -7,10 +7,27 @@
         "vscode": {
             "extensions": [
                 "ms-python.python",
-                "ms-python.pylint", 
+                "charliermarsh.ruff",
                 "ms-toolsai.jupyter",
-                "ms-python.black-formatter"
-            ]
+                "ms-python.mypy-type-checker"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "[python]": {
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.fixAll.ruff": "explicit",
+                        "source.organizeImports.ruff": "explicit"
+                    },
+                    "editor.defaultFormatter": "charliermarsh.ruff"
+                },
+                "ruff.nativeServer": true,
+                "notebook.formatOnSave.enabled": true,
+                "notebook.codeActionsOnSave": {
+                    "notebook.source.fixAll.ruff": "explicit",
+                    "notebook.source.organizeImports.ruff": "explicit"
+                }
+            }
         }
     },
     "forwardPorts": [5432, 8000],

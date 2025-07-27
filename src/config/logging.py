@@ -13,18 +13,16 @@ def setup_logging():
     # Configure root logger
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper()),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(settings.log_file),
-            logging.StreamHandler(sys.stdout)
-        ]
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.FileHandler(settings.log_file), logging.StreamHandler(sys.stdout)],
     )
 
     # Set specific logger levels
-    logging.getLogger('alpaca').setLevel(logging.INFO)
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
-    logging.getLogger('transformers').setLevel(logging.WARNING)
+    logging.getLogger("alpaca").setLevel(logging.INFO)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("transformers").setLevel(logging.WARNING)
 
     return logging.getLogger(__name__)
+
 
 logger = setup_logging()

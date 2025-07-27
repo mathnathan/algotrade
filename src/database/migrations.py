@@ -15,6 +15,7 @@ from alembic.config import Config
 
 logger = logging.getLogger(__name__)
 
+
 def init_alembic():
     """
     Initialize Alembic migration repository.
@@ -120,7 +121,7 @@ else:
 
         # Write the custom env.py
         env_py_path = alembic_dir / "env.py"
-        with open(env_py_path, 'w') as f:
+        with open(env_py_path, "w") as f:
             f.write(env_py_content)
 
         logger.info("✅ Alembic migration system initialized successfully")
@@ -132,6 +133,7 @@ else:
     except Exception as e:
         logger.error(f"❌ Failed to initialize Alembic: {e}")
         raise
+
 
 async def run_migrations():
     """
@@ -149,6 +151,7 @@ async def run_migrations():
         if not alembic_cfg_path.exists():
             logger.warning("⚠️  No alembic.ini found - creating tables directly")
             from src.database.connection import db_manager
+
             await db_manager.create_tables()
             return
 
@@ -163,6 +166,7 @@ async def run_migrations():
     except Exception as e:
         logger.error(f"❌ Migration failed: {e}")
         raise
+
 
 def create_migration(message: str):
     """

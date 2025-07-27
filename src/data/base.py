@@ -15,14 +15,15 @@ from sqlalchemy.orm import DeclarativeBase
 # Define naming convention for indexes and constraints
 # This ensures consistent, predictable naming across all database objects
 convention = {
-    "ix": "ix_%(column_0_label)s",                    # Index naming
-    "uq": "uq_%(table_name)s_%(column_0_name)s",      # Unique constraint naming
-    "ck": "ck_%(table_name)s_%(constraint_name)s",    # Check constraint naming
+    "ix": "ix_%(column_0_label)s",  # Index naming
+    "uq": "uq_%(table_name)s_%(column_0_name)s",  # Unique constraint naming
+    "ck": "ck_%(table_name)s_%(constraint_name)s",  # Check constraint naming
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",  # Foreign key naming
-    "pk": "pk_%(table_name)s"                         # Primary key naming
+    "pk": "pk_%(table_name)s",  # Primary key naming
 }
 
 metadata = MetaData(naming_convention=convention)
+
 
 class Base(DeclarativeBase):
     """
@@ -31,6 +32,7 @@ class Base(DeclarativeBase):
     This parent class gives all our data models their database superpowers
     like connection handling, query building, and automatic SQL generation.
     """
+
     metadata = metadata
 
     # This allows us to convert model instances to dictionaries easily

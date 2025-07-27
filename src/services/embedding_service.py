@@ -11,6 +11,7 @@ from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+
 class EmbeddingService:
     """
     Clean embedding service that prepares headline embeddings and sentiment vectors
@@ -38,8 +39,10 @@ class EmbeddingService:
         self.embedding_dim = self.embedding_model.get_sentence_embedding_dimension()  # 384
         self.sentiment_dim = 3  # [positive, negative, intensity]
 
-        logger.info(f"Embedding service initialized - "
-                   f"Embedding dim: {self.embedding_dim}, Sentiment dim: {self.sentiment_dim}")
+        logger.info(
+            f"Embedding service initialized - "
+            f"Embedding dim: {self.embedding_dim}, Sentiment dim: {self.sentiment_dim}"
+        )
 
     def _load_embedding_model(self) -> SentenceTransformer:
         """
@@ -53,7 +56,7 @@ class EmbeddingService:
             model = SentenceTransformer(
                 settings.embedding_model,
                 cache_folder=str(settings.huggingface_cache_dir),
-                device='cpu'
+                device="cpu",
             )
             # Optimize for financial headline length
             model.max_seq_length = 256
@@ -77,7 +80,7 @@ class EmbeddingService:
                 model="cardiffnlp/twitter-roberta-base-sentiment-latest",
                 tokenizer="cardiffnlp/twitter-roberta-base-sentiment-latest",
                 device=-1,
-                return_all_scores=True
+                return_all_scores=True,
             )
             logger.info("Loaded sentiment analyzer")
             return analyzer
@@ -101,7 +104,7 @@ class EmbeddingService:
             embedding = self.embedding_model.encode(
                 headline.strip(),
                 convert_to_numpy=True,
-                normalize_embeddings=True  # Normalize for stable training
+                normalize_embeddings=True,  # Normalize for stable training
             )
             return embedding
         except Exception as e:
@@ -129,12 +132,12 @@ class EmbeddingService:
             results = self.sentiment_analyzer(headline.strip()[:512])
 
             # Parse results (format: [{'label': 'POSITIVE', 'score': 0.8}, ...])
-            sentiment_scores = {result['label'].lower(): result['score'] for result in results[0]}
+            sentiment_scores = {result["label"].lower(): result["score"] for result in results[0]}
 
             # Extract individual sentiment strengths
-            positive_score = sentiment_scores.get('positive', 0.0)
-            negative_score = sentiment_scores.get('negative', 0.0)
-            neutral_score = sentiment_scores.get('neutral', 0.0)
+            positive_score = sentiment_scores.get("positive", 0.0)
+            negative_score = sentiment_scores.get("negative", 0.0)
+            neutral_score = sentiment_scores.get("neutral", 0.0)
 
             # Normalize to ensure probabilities sum to 1
             total = positive_score + negative_score + neutral_score
@@ -153,9 +156,7 @@ class EmbeddingService:
             return np.array([0.33, 0.33, 0.34])
 
     def combine_embeddings_with_sentiment_weighting(
-        self,
-        embeddings: list[np.ndarray],
-        sentiment_vectors: list[np.ndarray]
+        self, embeddings: list[np.ndarray], sentiment_vectors: list[np.ndarray]
     ) -> np.ndarray:
         """
         Combine multiple embeddings using sentiment-aware weighting.
@@ -202,8 +203,7 @@ class EmbeddingService:
         return combined_embedding
 
     def combine_sentiment_vectors_with_weighting(
-        self,
-        sentiment_vectors: list[np.ndarray]
+        self, sentiment_vectors: list[np.ndarray]
     ) -> np.ndarray:
         """
         Combine multiple sentiment vectors using the same weighting mechanism.
@@ -235,9 +235,7 @@ class EmbeddingService:
         return combined_sentiment
 
     def process_news_for_temporal_bucket(
-        self,
-        headlines: list[str],
-        bucket_identifier: str | None = None
+        self, headlines: list[str], bucket_identifier: str | None = None
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Process a list of headlines that belong to the same temporal bucket.
@@ -274,9 +272,7 @@ class EmbeddingService:
         combined_embedding = self.combine_embeddings_with_sentiment_weighting(
             embeddings, sentiment_vectors
         )
-        combined_sentiment = self.combine_sentiment_vectors_with_weighting(
-            sentiment_vectors
-        )
+        combined_sentiment = self.combine_sentiment_vectors_with_weighting(sentiment_vectors)
 
         if bucket_identifier:
             logger.debug(f"Processed {len(headlines)} headlines for bucket {bucket_identifier}")
@@ -284,10 +280,7 @@ class EmbeddingService:
         return combined_embedding, combined_sentiment
 
     def create_temporal_sequences(
-        self,
-        news_df: pd.DataFrame,
-        sequence_length: int,
-        bucket_hours: int = 24
+        self, news_df: pd.DataFrame, sequence_length: int, bucket_hours: int = 24
     ) -> dict[str, np.ndarray]:
         """
         Create temporally-ordered sequences of embeddings and sentiment vectors.
@@ -309,17 +302,17 @@ class EmbeddingService:
         """
         if news_df.empty:
             return {
-                'embedding_sequence': np.zeros((sequence_length, self.embedding_dim)),
-                'sentiment_sequence': np.zeros((sequence_length, self.sentiment_dim)),
-                'bucket_dates': [],
-                'valid_buckets': 0
+                "embedding_sequence": np.zeros((sequence_length, self.embedding_dim)),
+                "sentiment_sequence": np.zeros((sequence_length, self.sentiment_dim)),
+                "bucket_dates": [],
+                "valid_buckets": 0,
             }
 
         # Sort news by publication time (oldest first for chronological order)
-        sorted_news = news_df.sort_values('published_at').copy()
+        sorted_news = news_df.sort_values("published_at").copy()
 
         # Create temporal buckets
-        end_date = sorted_news['published_at'].max()
+        end_date = sorted_news["published_at"].max()
         end_date - timedelta(hours=bucket_hours * sequence_length)
 
         # Initialize sequences
@@ -336,27 +329,27 @@ class EmbeddingService:
 
             # Find headlines in this bucket
             bucket_news = sorted_news[
-                (sorted_news['published_at'] >= bucket_start) &
-                (sorted_news['published_at'] < bucket_end)
+                (sorted_news["published_at"] >= bucket_start)
+                & (sorted_news["published_at"] < bucket_end)
             ]
 
-            bucket_headlines = bucket_news['headline'].fillna('').tolist()
+            bucket_headlines = bucket_news["headline"].fillna("").tolist()
             bucket_headlines = [h for h in bucket_headlines if h.strip()]
 
             # Process headlines for this bucket
             if bucket_headlines:
                 embedding, sentiment = self.process_news_for_temporal_bucket(
                     bucket_headlines,
-                    bucket_identifier=f"bucket_{sequence_length-1-i}_{bucket_start.date()}"
+                    bucket_identifier=f"bucket_{sequence_length - 1 - i}_{bucket_start.date()}",
                 )
                 # Store in chronological order (oldest first)
-                embedding_sequence[sequence_length-1-i] = embedding
-                sentiment_sequence[sequence_length-1-i] = sentiment
+                embedding_sequence[sequence_length - 1 - i] = embedding
+                sentiment_sequence[sequence_length - 1 - i] = sentiment
                 valid_buckets += 1
             else:
                 # Use zero vectors for empty buckets
-                embedding_sequence[sequence_length-1-i] = np.zeros(self.embedding_dim)
-                sentiment_sequence[sequence_length-1-i] = np.array([0.33, 0.33, 0.34])
+                embedding_sequence[sequence_length - 1 - i] = np.zeros(self.embedding_dim)
+                sentiment_sequence[sequence_length - 1 - i] = np.array([0.33, 0.33, 0.34])
 
             bucket_dates.append(bucket_start.date())
 
@@ -366,17 +359,14 @@ class EmbeddingService:
         logger.info(f"Created sequences with {valid_buckets}/{sequence_length} valid buckets")
 
         return {
-            'embedding_sequence': embedding_sequence,
-            'sentiment_sequence': sentiment_sequence,
-            'bucket_dates': bucket_dates,
-            'valid_buckets': valid_buckets
+            "embedding_sequence": embedding_sequence,
+            "sentiment_sequence": sentiment_sequence,
+            "bucket_dates": bucket_dates,
+            "valid_buckets": valid_buckets,
         }
 
     def prepare_model_inputs(
-        self,
-        news_df: pd.DataFrame,
-        target_date: pd.Timestamp,
-        sequence_length: int | None = None
+        self, news_df: pd.DataFrame, target_date: pd.Timestamp, sequence_length: int | None = None
     ) -> dict[str, np.ndarray]:
         """
         Main interface for preparing news data for model consumption.
@@ -393,26 +383,28 @@ class EmbeddingService:
             sequence_length = settings.model.news_sequence_length
 
         # Filter news up to the target date
-        relevant_news = news_df[news_df['published_at'] <= target_date].copy()
+        relevant_news = news_df[news_df["published_at"] <= target_date].copy()
 
         # Create the temporal sequences
         sequences = self.create_temporal_sequences(
             relevant_news,
             sequence_length=sequence_length,
-            bucket_hours=24  # Daily buckets
+            bucket_hours=24,  # Daily buckets
         )
 
-        logger.info(f"Prepared model inputs for {target_date.date()} "
-                   f"with {sequences['valid_buckets']} valid news buckets")
+        logger.info(
+            f"Prepared model inputs for {target_date.date()} "
+            f"with {sequences['valid_buckets']} valid news buckets"
+        )
 
         return {
-            'headline_embeddings': sequences['embedding_sequence'],
-            'sentiment_vectors': sequences['sentiment_sequence'],
-            'bucket_dates': sequences['bucket_dates'],
-            'metadata': {
-                'valid_buckets': sequences['valid_buckets'],
-                'total_buckets': sequence_length,
-                'target_date': target_date,
-                'coverage_ratio': sequences['valid_buckets'] / sequence_length
-            }
+            "headline_embeddings": sequences["embedding_sequence"],
+            "sentiment_vectors": sequences["sentiment_sequence"],
+            "bucket_dates": sequences["bucket_dates"],
+            "metadata": {
+                "valid_buckets": sequences["valid_buckets"],
+                "total_buckets": sequence_length,
+                "target_date": target_date,
+                "coverage_ratio": sequences["valid_buckets"] / sequence_length,
+            },
         }

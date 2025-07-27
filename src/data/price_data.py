@@ -15,6 +15,7 @@ class HistoricalPrice(Base):
     This model incorporates optimizations learned from production trading systems
     where query performance directly impacts trading profitability.
     """
+
     __tablename__ = "historical_prices"
 
     # Primary key using UUID for better distribution in partitioned tables
@@ -37,71 +38,63 @@ class HistoricalPrice(Base):
 
     # Additional trading metrics for analysis
     dollar_volume = Column(Numeric(precision=20, scale=2), nullable=True)  # price * volume
-    average_trade_size = Column(Numeric(precision=15, scale=6), nullable=True)  # volume / trade_count
+    average_trade_size = Column(
+        Numeric(precision=15, scale=6), nullable=True
+    )  # volume / trade_count
 
     # Data quality and lineage tracking
-    data_source = Column(String(50), nullable=False, default='alpaca')
+    data_source = Column(String(50), nullable=False, default="alpaca")
     data_quality_score = Column(Float, nullable=True)  # 0.0 to 1.0 quality rating
     is_validated = Column(Boolean, nullable=False, default=False)
 
     # Audit fields with automatic timestamping
     created_at = Column(DateTime(timezone=True), nullable=False, default=func.now())
-    updated_at = Column(DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now()
+    )
 
     # Check constraints to ensure data integrity
     __table_args__ = (
         # Basic OHLC constraints
-        CheckConstraint('open > 0', name='ck_historical_prices_open_positive'),
-        CheckConstraint('high > 0', name='ck_historical_prices_high_positive'),
-        CheckConstraint('low > 0', name='ck_historical_prices_low_positive'),
-        CheckConstraint('close > 0', name='ck_historical_prices_close_positive'),
-
+        CheckConstraint("open > 0", name="ck_historical_prices_open_positive"),
+        CheckConstraint("high > 0", name="ck_historical_prices_high_positive"),
+        CheckConstraint("low > 0", name="ck_historical_prices_low_positive"),
+        CheckConstraint("close > 0", name="ck_historical_prices_close_positive"),
         # OHLC logical constraints
-        CheckConstraint('high >= open', name='ck_historical_prices_high_ge_open'),
-        CheckConstraint('high >= close', name='ck_historical_prices_high_ge_close'),
-        CheckConstraint('low <= open', name='ck_historical_prices_low_le_open'),
-        CheckConstraint('low <= close', name='ck_historical_prices_low_le_close'),
-        CheckConstraint('high >= low', name='ck_historical_prices_high_ge_low'),
-
+        CheckConstraint("high >= open", name="ck_historical_prices_high_ge_open"),
+        CheckConstraint("high >= close", name="ck_historical_prices_high_ge_close"),
+        CheckConstraint("low <= open", name="ck_historical_prices_low_le_open"),
+        CheckConstraint("low <= close", name="ck_historical_prices_low_le_close"),
+        CheckConstraint("high >= low", name="ck_historical_prices_high_ge_low"),
         # Volume constraints
-        CheckConstraint('volume >= 0', name='ck_historical_prices_volume_non_negative'),
-        CheckConstraint('trade_count >= 0', name='ck_historical_prices_trade_count_non_negative'),
-
+        CheckConstraint("volume >= 0", name="ck_historical_prices_volume_non_negative"),
+        CheckConstraint("trade_count >= 0", name="ck_historical_prices_trade_count_non_negative"),
         # VWAP constraint
-        CheckConstraint('vwap IS NULL OR (vwap >= low AND vwap <= high)',
-                       name='ck_historical_prices_vwap_range'),
-
+        CheckConstraint(
+            "vwap IS NULL OR (vwap >= low AND vwap <= high)", name="ck_historical_prices_vwap_range"
+        ),
         # Data quality constraint
-        CheckConstraint('data_quality_score IS NULL OR (data_quality_score >= 0 AND data_quality_score <= 1)',
-                       name='ck_historical_prices_quality_score_range'),
-
+        CheckConstraint(
+            "data_quality_score IS NULL OR (data_quality_score >= 0 AND data_quality_score <= 1)",
+            name="ck_historical_prices_quality_score_range",
+        ),
         # Performance-optimized indexes
-
         # Primary query pattern: symbol + time range
-        Index('ix_prices_symbol_timestamp', 'symbol', 'timestamp'),
-
+        Index("ix_prices_symbol_timestamp", "symbol", "timestamp"),
         # Time-series analysis across symbols
-        Index('ix_prices_timestamp_symbol', 'timestamp', 'symbol'),
-
+        Index("ix_prices_timestamp_symbol", "timestamp", "symbol"),
         # Unique constraint preventing duplicates
-        Index('uq_prices_symbol_timestamp', 'symbol', 'timestamp', unique=True),
-
+        Index("uq_prices_symbol_timestamp", "symbol", "timestamp", unique=True),
         # Volume analysis queries
-        Index('ix_prices_volume_analysis', 'symbol', 'timestamp', 'volume'),
-
+        Index("ix_prices_volume_analysis", "symbol", "timestamp", "volume"),
         # Price movement analysis
-        Index('ix_prices_price_analysis', 'symbol', 'timestamp', 'close', 'volume'),
-
+        Index("ix_prices_price_analysis", "symbol", "timestamp", "close", "volume"),
         # Data quality monitoring
-        Index('ix_prices_quality', 'data_quality_score', 'is_validated'),
-
+        Index("ix_prices_quality", "data_quality_score", "is_validated"),
         # Partial index for high-volume trading days (performance optimization)
-        Index('ix_prices_high_volume', 'symbol', 'timestamp',
-              postgresql_where='volume > 1000000'),
-
+        Index("ix_prices_high_volume", "symbol", "timestamp", postgresql_where="volume > 1000000"),
         # Partial index for validated data only
-        Index('ix_prices_validated', 'symbol', 'timestamp',
-              postgresql_where='is_validated = true'),
+        Index("ix_prices_validated", "symbol", "timestamp", postgresql_where="is_validated = true"),
     )
 
     def calculate_derived_metrics(self) -> None:
@@ -117,10 +110,11 @@ class HistoricalPrice(Base):
         if not all([self.open, self.high, self.low, self.close]):
             return False
 
-        return (self.low <= self.open <= self.high and
-                self.low <= self.close <= self.high)
+        return self.low <= self.open <= self.high and self.low <= self.close <= self.high
 
     def __repr__(self) -> str:
-        return (f"<HistoricalPrice(symbol='{self.symbol}', "
-                f"timestamp='{self.timestamp}', close={self.close}, "
-                f"volume={self.volume})>")
+        return (
+            f"<HistoricalPrice(symbol='{self.symbol}', "
+            f"timestamp='{self.timestamp}', close={self.close}, "
+            f"volume={self.volume})>"
+        )

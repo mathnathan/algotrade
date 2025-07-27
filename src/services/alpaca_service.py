@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.historical.news import NewsClient
-from alpaca.data.requests import NewsRequest, StockBarsRequest
+
+# Import `Adjustment` from the alpaca library
+from alpaca.data.requests import Adjustment, DataFeed, NewsRequest, StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, TimeInForce
@@ -25,10 +27,10 @@ class AlpacaService:
     def __init__(self):
         # Initialize all Alpaca clients
         # Dynamically select API keys based on environment (paper/live)
-        env = 'paper' if settings.paper else 'live'
+        env = "paper" if settings.paper else "live"
         client_params = {
-            'api_key': getattr(settings, f'apca_{env}_api_key_id'),
-            'secret_key': getattr(settings, f'apca_{env}_api_secret_key'),
+            "api_key": getattr(settings, f"apca_{env}_api_key_id"),
+            "secret_key": getattr(settings, f"apca_{env}_api_secret_key"),
         }
 
         # TradingClient handles order management and account info
@@ -49,9 +51,9 @@ class AlpacaService:
         """
         try:
             account = self.trading_client.get_account()
-            return account
+            return account.model_dump() if hasattr(account, "model_dump") else dict(account)
         except Exception as e:
-            raise Exception(f"Failed to get account info: {e}")
+            raise Exception(f"Failed to get account info: {e}") from e
 
     async def fetch_historical_prices(
         self,
@@ -74,38 +76,69 @@ class AlpacaService:
         true in extended hours when only sophisticated traders are active
         """
         # We must use a 15-minute buffer because real-time data is not available on the free tier
-        end_date = datetime.now() - timedelta(minutes=15) # Latest data with 15 min buffer
+        end_date = datetime.now() - timedelta(minutes=15)  # Latest data with 15 min buffer
         start_date = end_date - timedelta(days=days_back * 1.5)  # Buffer for weekends/holidays
 
-        symbol_or_symbols = [symbol_or_symbols] if isinstance(symbol_or_symbols, str) else symbol_or_symbols
+        symbol_or_symbols = (
+            [symbol_or_symbols] if isinstance(symbol_or_symbols, str) else symbol_or_symbols
+        )
         request = StockBarsRequest(
             symbol_or_symbols=symbol_or_symbols,
             timeframe=timeframe,
             start=start_date,
             end=end_date,
-            feed='sip', # SIP stands for Securities Information Processor, which provides consolidated data. Better than 'iex' for SPY
+            feed=DataFeed.SIP,  # SIP stands for Securities Information Processor, which provides consolidated data. Better than 'iex' for SPY
             asof=None,  # Use 'asof' to get the latest available data
-            adjustment='raw',  # Use 'raw' to get unadjusted prices
+            adjustment=Adjustment.RAW,  # Use 'raw' to get unadjusted prices
         )
 
+        columns = [
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "returns",
+            "volatility",
+            "volume_sma",
+            "session",
+        ]
         try:
             bars = self.stock_data_client.get_stock_bars(request)
             df = bars.df.reset_index()
 
             # Add technical features that might be useful for the model
-            df['returns'] = df['close'].pct_change()
-            df['volatility'] = df['returns'].rolling(window=20).std()
-            df['volume_sma'] = df['volume'].rolling(window=20).mean()
+            df["returns"] = df["close"].pct_change()
+            df["volatility"] = df["returns"].rolling(window=20).std()
+            df["volume_sma"] = df["volume"].rolling(window=20).mean()
 
             # Add a helpful column to identify extended hours
-            df['session'] = self._classify_trading_session(df)
+            df["session"] = self._classify_trading_session(df)
 
-            return df[['timestamp', 'open', 'high', 'low', 'close', 'volume',
-                    'returns', 'volatility', 'volume_sma', 'session']].dropna().reset_index(drop=True)
+            result_df = (
+                df[
+                    [
+                        "timestamp",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "returns",
+                        "volatility",
+                        "volume_sma",
+                        "session",
+                    ]
+                ]
+                .dropna()
+                .reset_index(drop=True)
+            )
+            return result_df if not result_df.empty else pd.DataFrame(columns=columns)
 
-        except Exception as e:
-            raise Exception(f"Failed to fetch price data for {symbol_or_symbols}: {e}")
-
+        except Exception:
+            # Return an empty DataFrame with the expected columns on error
+            return pd.DataFrame(columns=columns)
 
     def _classify_trading_session(self, df: pd.DataFrame) -> pd.Series:
         """
@@ -118,27 +151,24 @@ class AlpacaService:
         - Afterhours: Often continuation of regular hours trends, earnings reactions
         """
         if df.empty:
-            return pd.Series([], dtype='object')
+            return pd.Series([], dtype="object")
 
         df_copy = df.copy()
-        df_copy['timestamp_et'] = pd.to_datetime(df_copy['timestamp']).dt.tz_convert('US/Eastern')
-        df_copy['time_only'] = df_copy['timestamp_et'].dt.time
+        df_copy["timestamp_et"] = pd.to_datetime(df_copy["timestamp"]).dt.tz_convert("US/Eastern")
+        df_copy["time_only"] = df_copy["timestamp_et"].dt.time
 
         def classify_session(time_val):
-            if time_val < pd.Timestamp('09:30:00').time():
-                return 'premarket'
-            elif time_val <= pd.Timestamp('16:00:00').time():
-                return 'regular'
+            if time_val < pd.Timestamp("09:30:00").time():
+                return "premarket"
+            elif time_val <= pd.Timestamp("16:00:00").time():
+                return "regular"
             else:
-                return 'afterhours'
+                return "afterhours"
 
-        return df_copy['time_only'].apply(classify_session)
+        return df_copy["time_only"].apply(classify_session).astype("object")
 
     async def fetch_news_data(
-        self,
-        comma_separated_symbols: str,
-        days_back: int = 30,
-        max_articles: int = 1000
+        self, comma_separated_symbols: str, days_back: int = 30, max_articles: int = 1000
     ) -> pd.DataFrame:
         """
         Fetch news data for sentiment analysis and model training.
@@ -158,10 +188,7 @@ class AlpacaService:
         start_date = end_date - timedelta(days=days_back)
 
         request = NewsRequest(
-            symbols=comma_separated_symbols,
-            start=start_date,
-            end=end_date,
-            limit=max_articles
+            symbols=comma_separated_symbols, start=start_date, end=end_date, limit=max_articles
         )
 
         news = self.news_client.get_news(request)
@@ -170,27 +197,28 @@ class AlpacaService:
         print(news_df.columns)
         print(news_df.head())
 
-
-
         try:
             news = self.news_client.get_news(request)
             news_df = news.df.reset_index()
 
             if news_df.empty:
-                return pd.DataFrame(columns=['created_at', 'headline', 'summary',
-                                           'symbols', 'source', 'url'])
+                return pd.DataFrame(
+                    columns=["created_at", "headline", "summary", "symbols", "source", "url"]
+                )
 
             # Filter and clean news based on our configuration
             news_df = self._filter_news_by_relevance(news_df)
 
             # Sort by publication time (most recent first)
-            news_df = news_df.sort_values('published_at', ascending=False)
+            news_df = news_df.sort_values("published_at", ascending=False)
 
-            return news_df[['published_at', 'headline', 'summary', 'symbols',
-                           'source', 'url']].reset_index(drop=True)
+            # Ensure all expected columns exist, fill missing with NaN
+            expected_cols = ["published_at", "headline", "summary", "symbols", "source", "url"]
+            result_df = news_df.reindex(columns=expected_cols).reset_index(drop=True)
+            return pd.DataFrame(result_df)
 
         except Exception as e:
-            raise Exception(f"Failed to fetch news data for {comma_separated_symbols}: {e}")
+            raise Exception(f"Failed to fetch news data for {comma_separated_symbols}: {e}") from e
 
     def _filter_news_by_relevance(self, news_df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -204,40 +232,30 @@ class AlpacaService:
             return news_df
 
         # Filter by headline length (too short = low information content)
-        news_df = news_df[
-            news_df['headline'].str.len() >= settings.news.min_headline_length
-        ].copy()
+        news_df = news_df[news_df["headline"].str.len() >= settings.news.min_headline_length].copy()
 
         # Create relevance score based on keywords
-        macro_pattern = '|'.join(settings.news.news_keywords_macro)
-        financial_pattern = '|'.join(settings.news.news_keywords_financial)
+        macro_pattern = "|".join(settings.news.news_keywords_macro or [])
+        financial_pattern = "|".join(settings.news.news_keywords_financial or [])
 
-        news_df['is_macro'] = news_df['headline'].str.contains(
-            macro_pattern, case=False, na=False
-        )
-        news_df['is_financial'] = news_df['headline'].str.contains(
+        news_df["is_macro"] = news_df["headline"].str.contains(macro_pattern, case=False, na=False)
+        news_df["is_financial"] = news_df["headline"].str.contains(
             financial_pattern, case=False, na=False
         )
 
         # Keep articles that match our criteria or are from major financial sources
-        major_sources = ['Reuters', 'Bloomberg', 'MarketWatch', 'CNBC', 'Wall Street Journal']
-        news_df['is_major_source'] = news_df['source'].isin(major_sources)
+        major_sources = ["Reuters", "Bloomberg", "MarketWatch", "CNBC", "Wall Street Journal"]
+        news_df["is_major_source"] = news_df["source"].isin(major_sources)
 
         # Filter: macro news OR financial news OR major source
         relevant_news = news_df[
-            news_df['is_macro'] |
-            news_df['is_financial'] |
-            news_df['is_major_source']
+            news_df["is_macro"] | news_df["is_financial"] | news_df["is_major_source"]
         ].copy()
 
-        return relevant_news.drop(['is_macro', 'is_financial', 'is_major_source'], axis=1)
+        return relevant_news.drop(["is_macro", "is_financial", "is_major_source"], axis=1)
 
     async def submit_market_order(
-        self,
-        symbol: str,
-        side: OrderSide,
-        quantity: float,
-        client_order_id: str | None = None
+        self, symbol: str, side: OrderSide, quantity: float, client_order_id: str | None = None
     ) -> dict:
         """
         Submit a market order to Alpaca.
@@ -257,24 +275,24 @@ class AlpacaService:
             qty=quantity,
             side=side,
             time_in_force=TimeInForce.DAY,
-            client_order_id=client_order_id
+            client_order_id=client_order_id,
         )
 
         try:
             order = self.trading_client.submit_order(market_order)
             return {
-                'order_id': order.id,
-                'client_order_id': order.client_order_id,
-                'symbol': order.symbol,
-                'side': order.side.value,
-                'quantity': float(order.qty),
-                'status': order.status.value,
-                'submitted_at': order.submitted_at,
-                'filled_qty': float(order.filled_qty or 0),
-                'filled_price': float(order.filled_avg_price or 0)
+                "order_id": order.id,
+                "client_order_id": order.client_order_id,
+                "symbol": order.symbol,
+                "side": order.side.value,
+                "quantity": float(order.qty),
+                "status": order.status.value,
+                "submitted_at": order.submitted_at,
+                "filled_qty": float(order.filled_qty or 0),
+                "filled_price": float(order.filled_avg_price or 0),
             }
         except Exception as e:
-            raise Exception(f"Failed to submit order: {e}")
+            raise Exception(f"Failed to submit order: {e}") from e
 
     async def get_current_position(self, symbol: str) -> dict | None:
         """Get current position for a symbol."""
@@ -283,22 +301,22 @@ class AlpacaService:
             for position in positions:
                 if position.symbol == symbol:
                     return {
-                        'symbol': position.symbol,
-                        'quantity': float(position.qty),
-                        'side': position.side.value,
-                        'market_value': float(position.market_value),
-                        'cost_basis': float(position.cost_basis),
-                        'unrealized_pnl': float(position.unrealized_pnl),
-                        'unrealized_pnl_pct': float(position.unrealized_plpc)
+                        "symbol": position.symbol,
+                        "quantity": float(position.qty),
+                        "side": position.side.value,
+                        "market_value": float(position.market_value),
+                        "cost_basis": float(position.cost_basis),
+                        "unrealized_pnl": float(position.unrealized_pnl),
+                        "unrealized_pnl_pct": float(position.unrealized_plpc),
                     }
             return None
         except Exception as e:
-            raise Exception(f"Failed to get position for {symbol}: {e}")
+            raise Exception(f"Failed to get position for {symbol}: {e}") from e
 
     async def close_position(self, symbol: str) -> dict:
         """Close all positions for a symbol."""
         try:
             response = self.trading_client.close_position(symbol)
-            return {'status': 'closed', 'order_id': response.id}
+            return {"status": "closed", "order_id": response.id}
         except Exception as e:
-            raise Exception(f"Failed to close position for {symbol}: {e}")
+            raise Exception(f"Failed to close position for {symbol}: {e}") from e

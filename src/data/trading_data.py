@@ -16,6 +16,7 @@ class TradingSession(Base):
     This table helps monitor the algorithmic trading system's performance
     and provides audit trails for trading decisions.
     """
+
     __tablename__ = "trading_sessions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -42,6 +43,6 @@ class TradingSession(Base):
     notes = Column(Text, nullable=True)
 
     __table_args__ = (
-        Index('ix_trading_sessions_strategy_time', 'strategy_name', 'session_start'),
-        Index('ix_trading_sessions_performance', 'total_pnl', 'session_start'),
+        Index("ix_trading_sessions_strategy_time", "strategy_name", "session_start"),
+        Index("ix_trading_sessions_performance", "total_pnl", "session_start"),
     )

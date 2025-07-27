@@ -6,17 +6,20 @@ This allows us to debug initialization issues in a local Python environment
 before dealing with container complexity.
 """
 
+# Python libraries
 import sys
 from pathlib import Path
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
+# Now import project modules
 from src.config.logging import setup_logging
 from src.database.migrations import init_alembic
 
+# Add project root to path first
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
 logger = setup_logging()
+
 
 def test_alembic_initialization():
     """Test that Alembic initialization works correctly."""
@@ -46,6 +49,7 @@ def test_alembic_initialization():
     except Exception as e:
         logger.error(f"❌ Alembic initialization test failed: {e}")
         return False
+
 
 if __name__ == "__main__":
     if test_alembic_initialization():

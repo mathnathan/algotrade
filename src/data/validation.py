@@ -3,16 +3,18 @@
 Comprehensive data validation for financial market data.
 This ensures that only valid, sensible market data reaches your trading algorithms.
 """
+
 # Python imports
 import datetime
 import logging
 from decimal import Decimal
-from typing import Any
+from typing import Any, ClassVar
 
 # Third-party imports
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
+
 
 class ValidatedPrice(BaseModel):
     """
@@ -22,8 +24,8 @@ class ValidatedPrice(BaseModel):
     market constraints before it reaches your database.
     """
 
-    symbol: str = Field(..., regex=r'^[A-Z]{1,10}$', description="Valid stock symbol")
-    timestamp: datetime = Field(..., description="Price observation timestamp")
+    symbol: str = Field(..., pattern=r"^[A-Z]{1,10}$", description="Valid stock symbol")
+    timestamp: datetime.datetime = Field(..., description="Price observation timestamp")
     open: Decimal = Field(..., ge=0, description="Opening price")
     high: Decimal = Field(..., ge=0, description="High price")
     low: Decimal = Field(..., ge=0, description="Low price")
@@ -32,58 +34,66 @@ class ValidatedPrice(BaseModel):
     trade_count: int = Field(..., ge=0, description="Number of trades")
     vwap: Decimal | None = Field(None, ge=0, description="Volume weighted average price")
 
-    @validator('timestamp')
-    def timestamp_must_have_timezone(self, v):
+    @field_validator("timestamp")
+    @classmethod
+    def timestamp_must_have_timezone(cls, v):
         """Ensure all timestamps include timezone information."""
         if v.tzinfo is None:
-            raise ValueError('Timestamp must include timezone information')
+            raise ValueError("Timestamp must include timezone information")
         return v
 
-    @validator('high')
-    def high_must_be_highest(self, v, values):
+    @field_validator("high")
+    @classmethod
+    def high_must_be_highest(cls, v, info):
         """Validate that high price is actually the highest price of the period."""
-        if 'open' in values and v < values['open']:
-            raise ValueError('High price cannot be less than open price')
-        if 'low' in values and v < values['low']:
-            raise ValueError('High price cannot be less than low price')
-        if 'close' in values and v < values['close']:
-            raise ValueError('High price cannot be less than close price')
+        values = info.data
+        if "open" in values and v < values["open"]:
+            raise ValueError("High price cannot be less than open price")
+        if "low" in values and v < values["low"]:
+            raise ValueError("High price cannot be less than low price")
+        if "close" in values and v < values["close"]:
+            raise ValueError("High price cannot be less than close price")
         return v
 
-    @validator('low')
-    def low_must_be_lowest(self, v, values):
+    @field_validator("low")
+    @classmethod
+    def low_must_be_lowest(cls, v, info):
         """Validate that low price is actually the lowest price of the period."""
-        if 'open' in values and v > values['open']:
-            raise ValueError('Low price cannot be greater than open price')
-        if 'high' in values and v > values['high']:
-            raise ValueError('Low price cannot be greater than high price')
-        if 'close' in values and v > values['close']:
-            raise ValueError('Low price cannot be greater than close price')
+        values = info.data
+        if "open" in values and v > values["open"]:
+            raise ValueError("Low price cannot be greater than open price")
+        if "high" in values and v > values["high"]:
+            raise ValueError("Low price cannot be greater than high price")
+        if "close" in values and v > values["close"]:
+            raise ValueError("Low price cannot be greater than close price")
         return v
 
-    @validator('vwap')
-    def vwap_must_be_reasonable(self, v, values):
+    @field_validator("vwap")
+    @classmethod
+    def vwap_must_be_reasonable(cls, v, info):
         """Validate that VWAP falls within the high-low range."""
         if v is None:
             return v
-        if 'high' in values and 'low' in values:
-            if not (values['low'] <= v <= values['high']):
-                raise ValueError('VWAP must fall between low and high prices')
+        values = info.data
+        if "high" in values and "low" in values and not (values["low"] <= v <= values["high"]):
+            raise ValueError("VWAP must fall between low and high prices")
         return v
 
-    @validator('volume')
-    def volume_must_be_reasonable(self, v, values):
+    @field_validator("volume")
+    @classmethod
+    def volume_must_be_reasonable(cls, v):
         """Validate that volume is within reasonable bounds for equity markets."""
         if v > 10_000_000_000:  # 10 billion shares seems unreasonable
-            raise ValueError('Volume appears unreasonably high')
+            raise ValueError("Volume appears unreasonably high")
         return v
 
     class Config:
         # Allow decimal types to be properly handled
-        json_encoders = {
+        json_encoders: ClassVar[dict] = {
             Decimal: lambda v: float(v),
-            datetime: lambda v: v.isoformat()
+            datetime.datetime: lambda v: v.isoformat(),
         }
+
 
 class ValidatedNews(BaseModel):
     """
@@ -100,48 +110,53 @@ class ValidatedNews(BaseModel):
     source: str | None = Field(None, max_length=100, description="News source")
     author: str | None = Field(None, max_length=200, description="Article author")
     url: str | None = Field(None, description="Link to full article")
-    created_at: datetime = Field(..., description="Publication timestamp")
-    updated_at: datetime = Field(..., description="Last modification timestamp")
+    created_at: datetime.datetime = Field(..., description="Publication timestamp")
+    updated_at: datetime.datetime = Field(..., description="Last modification timestamp")
     symbols: list[str] | None = Field(None, description="Associated stock symbols")
     images: dict[str, Any] | None = Field(None, description="Associated images")
     sentiment: float | None = Field(None, ge=-1.0, le=1.0, description="Sentiment score")
 
-    @validator('created_at', 'updated_at')
-    def timestamps_must_have_timezone(self, v):
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def timestamps_must_have_timezone(cls, v):
         """Ensure all timestamps include timezone information."""
         if v.tzinfo is None:
-            raise ValueError('Timestamps must include timezone information')
+            raise ValueError("Timestamps must include timezone information")
         return v
 
-    @validator('symbols')
-    def symbols_must_be_valid(self, v):
+    @field_validator("symbols")
+    @classmethod
+    def symbols_must_be_valid(cls, v):
         """Validate that stock symbols follow expected format."""
         if v is None:
             return v
 
         for symbol in v:
             if not isinstance(symbol, str) or not symbol.isupper() or len(symbol) > 10:
-                raise ValueError(f'Invalid symbol format: {symbol}')
+                raise ValueError(f"Invalid symbol format: {symbol}")
 
         return v
 
-    @validator('url')
-    def url_must_be_valid(self, v):
+    @field_validator("url")
+    @classmethod
+    def url_must_be_valid(cls, v):
         """Basic URL validation for news links."""
         if v is None:
             return v
 
-        if not v.startswith(('http://', 'https://')):
-            raise ValueError('URL must start with http:// or https://')
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
 
         return v
 
-    @validator('headline', 'summary', 'content')
-    def text_fields_must_not_be_empty(self, v):
+    @field_validator("headline", "summary", "content")
+    @classmethod
+    def text_fields_must_not_be_empty(cls, v):
         """Ensure text fields are not just whitespace."""
-        if v is not None and v.strip() == '':
-            raise ValueError('Text fields cannot be empty or just whitespace')
+        if v is not None and v.strip() == "":
+            raise ValueError("Text fields cannot be empty or just whitespace")
         return v
+
 
 class DataValidator:
     """
@@ -195,10 +210,10 @@ class DataValidator:
     def get_validation_stats(self) -> dict[str, Any]:
         """Get statistics about validation performance."""
         return {
-            'total_processed': self.processed_count,
-            'total_errors': self.error_count,
-            'error_rate': self.error_count / max(self.processed_count, 1),
-            'recent_errors': self.validation_errors[-10:]  # Last 10 errors
+            "total_processed": self.processed_count,
+            "total_errors": self.error_count,
+            "error_rate": self.error_count / max(self.processed_count, 1),
+            "recent_errors": self.validation_errors[-10:],  # Last 10 errors
         }
 
     def reset_stats(self) -> None:

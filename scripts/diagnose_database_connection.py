@@ -14,6 +14,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+
 def check_environment():
     """Check environment variables and their values."""
     print("🔍 Environment Diagnostic")
@@ -29,6 +30,7 @@ def check_environment():
 
     return True
 
+
 def check_drivers():
     """Check which database drivers are available."""
     print("\n🚗 Driver Availability Check")
@@ -37,6 +39,7 @@ def check_drivers():
     # Check asyncpg (what we want)
     try:
         import asyncpg
+
         print(f"✅ asyncpg available: version {asyncpg.__version__}")
         asyncpg_available = True
     except ImportError as e:
@@ -46,6 +49,7 @@ def check_drivers():
     # Check psycopg2 (what's being used incorrectly)
     try:
         import psycopg2
+
         print(f"⚠️  psycopg2 available: version {psycopg2.__version__}")
         print("   (This is the synchronous driver that's causing conflicts)")
         psycopg2_available = True
@@ -54,6 +58,7 @@ def check_drivers():
         psycopg2_available = False
 
     return asyncpg_available, psycopg2_available
+
 
 def check_sqlalchemy_url_parsing():
     """Test how SQLAlchemy parses different connection string formats."""
@@ -66,7 +71,7 @@ def check_sqlalchemy_url_parsing():
         test_urls = [
             "postgresql://trading_user:secure_trading_password@localhost:5433/trading_db",
             "postgresql+asyncpg://trading_user:secure_trading_password@localhost:5433/trading_db",
-            "postgresql+psycopg2://trading_user:secure_trading_password@localhost:5433/trading_db"
+            "postgresql+psycopg2://trading_user:secure_trading_password@localhost:5433/trading_db",
         ]
 
         for url_string in test_urls:
@@ -82,6 +87,7 @@ def check_sqlalchemy_url_parsing():
     except ImportError as e:
         print(f"❌ Cannot import SQLAlchemy: {e}")
 
+
 def check_settings_loading():
     """Check how our settings are loading the database URL."""
     print("\n⚙️  Settings Loading Test")
@@ -89,12 +95,13 @@ def check_settings_loading():
 
     try:
         from src.config.settings import settings
+
         print(f"Settings database_url: {settings.database_url}")
 
         # Test the URL transformation logic
         original_url = settings.database_url
-        if 'postgresql://' in original_url and '+asyncpg' not in original_url:
-            transformed_url = original_url.replace('postgresql://', 'postgresql+asyncpg://')
+        if "postgresql://" in original_url and "+asyncpg" not in original_url:
+            transformed_url = original_url.replace("postgresql://", "postgresql+asyncpg://")
             print(f"Original URL: {original_url}")
             print(f"Transformed URL: {transformed_url}")
         else:
@@ -102,6 +109,7 @@ def check_settings_loading():
 
     except Exception as e:
         print(f"❌ Failed to load settings: {e}")
+
 
 def main():
     """Run all diagnostic checks."""
@@ -130,6 +138,7 @@ def main():
 
     print("✅ Basic setup looks good - checking URL transformation logic...")
     return True
+
 
 if __name__ == "__main__":
     main()

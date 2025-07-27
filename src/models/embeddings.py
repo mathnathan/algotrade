@@ -21,12 +21,12 @@ class UnifiedTemporalEmbedding(nn.Module):
 
         # Relative position embeddings for sequence modeling
         # This helps the model understand "how far apart in time are these two events?"
-        self.relative_position_embedding = nn.Embedding(
-            max_sequence_length * 2, d_model // 4
-        )
+        self.relative_position_embedding = nn.Embedding(max_sequence_length * 2, d_model // 4)
 
         # Trading session context (crucial for understanding market context)
-        self.session_embedding = nn.Embedding(4, d_model // 8)  # premarket, open, regular, close, afterhours
+        self.session_embedding = nn.Embedding(
+            4, d_model // 8
+        )  # premarket, open, regular, close, afterhours
 
         # Final projection to combine all temporal components
         self.temporal_projection = nn.Linear(d_model // 2 + d_model // 4, d_model)
@@ -48,8 +48,8 @@ class UnifiedTemporalEmbedding(nn.Module):
         # Define session boundaries in minutes from midnight
         premarket_start = 4 * 60  # 4:00 AM
         market_open = 9 * 60 + 30  # 9:30 AM
-        market_close = 16 * 60     # 4:00 PM
-        afterhours_end = 20 * 60   # 8:00 PM
+        market_close = 16 * 60  # 4:00 PM
+        afterhours_end = 20 * 60  # 8:00 PM
 
         if total_minutes < premarket_start:
             return 0  # Outside trading hours
@@ -62,7 +62,7 @@ class UnifiedTemporalEmbedding(nn.Module):
         else:
             return 0  # Outside trading hours
 
-    def encode_timestamp(self, timestamp, modality_type='price'):
+    def encode_timestamp(self, timestamp, modality_type="price"):
         """
         Convert a timestamp into a rich temporal embedding.
 
@@ -86,10 +86,12 @@ class UnifiedTemporalEmbedding(nn.Module):
             weekday = timestamp[:, 1]
             hour = timestamp[:, 2]
             minute = timestamp[:, 3]
-            session = torch.tensor([
-                self._get_trading_session(h.item(), m.item())
-                for h, m in zip(hour, minute, strict=False)
-            ]).to(timestamp.device)
+            session = torch.tensor(
+                [
+                    self._get_trading_session(h.item(), m.item())
+                    for h, m in zip(hour, minute, strict=False)
+                ]
+            ).to(timestamp.device)
 
         # Get embeddings for each temporal component
         month_emb = self.month_embedding(month)
@@ -99,9 +101,9 @@ class UnifiedTemporalEmbedding(nn.Module):
         session_emb = self.session_embedding(session)
 
         # Combine all temporal components
-        temporal_features = torch.cat([
-            month_emb, weekday_emb, hour_emb, minute_emb, session_emb
-        ], dim=-1)
+        temporal_features = torch.cat(
+            [month_emb, weekday_emb, hour_emb, minute_emb, session_emb], dim=-1
+        )
 
         return temporal_features
 
@@ -113,6 +115,7 @@ class UnifiedTemporalEmbedding(nn.Module):
         The model needs to understand "this news article came out 3 minutes
         before this price movement" to learn cause-and-effect relationships.
         """
+
         # Convert timestamps to minutes since a reference point
         def timestamp_to_minutes(ts):
             if isinstance(ts, datetime):
@@ -126,7 +129,8 @@ class UnifiedTemporalEmbedding(nn.Module):
         # Compute relative differences (clamped to avoid extreme values)
         relative_diff = torch.clamp(
             minutes_b.unsqueeze(-1) - minutes_a.unsqueeze(-2),
-            min=-500, max=500  # +/- ~8 hours maximum relative distance
+            min=-500,
+            max=500,  # +/- ~8 hours maximum relative distance
         )
 
         # Map to embedding indices (add offset to handle negative values)
@@ -142,30 +146,28 @@ class UnifiedTemporalEmbedding(nn.Module):
         embeddings that enable precise cross-modal temporal attention.
         """
         # Encode absolute temporal positions for price data
-        price_temporal_emb = self.encode_timestamp(price_timestamps, 'price')
+        price_temporal_emb = self.encode_timestamp(price_timestamps, "price")
         price_temporal_emb = self.temporal_projection(price_temporal_emb)
 
         # Apply modality-specific scaling
         price_temporal_emb = price_temporal_emb * self.modality_temporal_scale[1]
 
-        result = {
-            'price_temporal_embeddings': price_temporal_emb
-        }
+        result = {"price_temporal_embeddings": price_temporal_emb}
 
         # If news timestamps are provided, handle cross-modal temporal relationships
         if news_timestamps is not None:
-            news_temporal_emb = self.encode_timestamp(news_timestamps, 'news')
+            news_temporal_emb = self.encode_timestamp(news_timestamps, "news")
             news_temporal_emb = self.temporal_projection(news_temporal_emb)
             news_temporal_emb = news_temporal_emb * self.modality_temporal_scale[0]
 
             # Compute relative positions for cross-attention
-            relative_pos_emb = self.compute_relative_positions(
-                news_timestamps, price_timestamps
-            )
+            relative_pos_emb = self.compute_relative_positions(news_timestamps, price_timestamps)
 
-            result.update({
-                'news_temporal_embeddings': news_temporal_emb,
-                'cross_modal_relative_positions': relative_pos_emb
-            })
+            result.update(
+                {
+                    "news_temporal_embeddings": news_temporal_emb,
+                    "cross_modal_relative_positions": relative_pos_emb,
+                }
+            )
 
         return result

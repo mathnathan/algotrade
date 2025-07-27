@@ -15,12 +15,13 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
+# Import our models so Alembic can detect schema changes
+from src.data.base import Base
+
 # Add the project root to Python path so we can import our models
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import our models so Alembic can detect schema changes
-from src.data.base import Base
 
 # This is the Alembic Config object, which provides access to configuration values
 config = context.config
@@ -32,6 +33,7 @@ if config.config_file_name is not None:
 # Set the target metadata for 'autogenerate' support
 # This tells Alembic what your ideal database structure should look like
 target_metadata = Base.metadata
+
 
 def run_migrations_offline():
     """
@@ -50,6 +52,7 @@ def run_migrations_offline():
 
     with context.begin_transaction():
         context.run_migrations()
+
 
 def run_migrations_online():
     """
@@ -71,13 +74,11 @@ def run_migrations_online():
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
+
 
 # Determine which mode to run based on context
 if context.is_offline_mode():

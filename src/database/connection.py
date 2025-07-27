@@ -145,6 +145,168 @@ class DatabaseManager:
             self.metrics.record_health_check_failure()
             logger.warning(f"Health check failed: {e}")
 
+    async def test_connection(self) -> bool:
+        """
+        Test database connectivity with comprehensive validation.
+
+        In algorithmic trading, database availability is like checking if the stock exchange
+        is open before placing trades. We need to know immediately if our data pipeline
+        can function properly.
+
+        This method provides more than just a ping - it validates that our trading system
+        can actually execute the types of operations it needs for market data storage.
+        """
+        try:
+            # Initialize the connection if not already done
+            if not self._initialized:
+                await self.initialize()
+
+            # Test actual database operations that our trading system will need
+            async with self.get_session() as session:
+                # Basic connectivity test
+                result = await session.execute(text("SELECT 1 as connectivity_test"))
+                test_value = result.scalar()
+
+                if test_value != 1:
+                    logger.error(
+                        "Database connectivity test failed - basic query returned unexpected result"
+                    )
+                    return False
+
+                # Test transaction handling (critical for trade execution integrity)
+                async with session.begin():
+                    await session.execute(text("SELECT NOW() as transaction_test"))
+
+                # Test that we can handle the data types we'll use for market data
+                await session.execute(
+                    text("""
+                    SELECT
+                        'AAPL'::varchar as symbol_test,
+                        150.25::numeric(12,4) as price_test,
+                        NOW()::timestamp with time zone as timestamp_test,
+                        1000000::bigint as volume_test
+                """)
+                )
+
+                logger.info("✅ Database connection test passed - ready for market data operations")
+                return True
+
+        except Exception as e:
+            logger.error(f"❌ Database connection test failed: {e}")
+            self.metrics.record_session_error()
+            return False
+
+    async def create_tables(self) -> None:
+        """
+        Create all database tables and indexes defined in our SQLAlchemy models.
+
+        Think of this as building the trading floor infrastructure. Just like how
+        the NYSE needs specific trading stations, communication systems, and data
+        feeds before opening for business, our trading system needs its database
+        schema properly established before it can store and analyze market data.
+
+        This method uses SQLAlchemy's metadata system to create tables that match
+        our Python model definitions - ensuring type safety and proper indexing
+        for high-frequency data operations.
+        """
+        try:
+            if not self._initialized:
+                await self.initialize()
+
+            if self._engine is None:
+                raise RuntimeError("Database engine not initialized")
+
+            logger.info("🏗️  Creating trading database schema...")
+
+            # Import our models to ensure they're registered with the metadata
+            from src.data import Base
+
+            # Use async connection for table creation
+            async with self._engine.begin() as conn:
+                # Create all tables defined in our models
+                await conn.run_sync(Base.metadata.create_all)
+
+                logger.info("✅ Database tables created successfully")
+
+                # Log what tables were created for verification
+                result = await conn.execute(
+                    text("""
+                    SELECT table_name, column_name, data_type, is_nullable
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                    AND table_name IN ('historical_prices', 'historical_news')
+                    ORDER BY table_name, ordinal_position
+                """)
+                )
+
+                tables_info = result.fetchall()
+                if tables_info:
+                    logger.info("📊 Created tables for market data storage:")
+                    current_table = None
+                    for row in tables_info:
+                        table_name, column_name, data_type, is_nullable = row
+                        if table_name != current_table:
+                            logger.info(f"  📋 {table_name}:")
+                            current_table = table_name
+                        nullable_indicator = "NULL" if is_nullable == "YES" else "NOT NULL"
+                        logger.info(f"    • {column_name} ({data_type}) {nullable_indicator}")
+
+                # Create indexes for optimal query performance
+                await self._create_trading_indexes(conn)
+
+        except Exception as e:
+            logger.error(f"❌ Table creation failed: {e}")
+            raise
+
+    async def _create_trading_indexes(self, conn) -> None:
+        """
+        Create specialized indexes optimized for trading data queries.
+
+        In trading systems, query speed directly impacts profitability. These indexes
+        are like having express lanes on a highway - they ensure that common queries
+        (like "get all SPY prices from the last hour") execute in milliseconds rather
+        than seconds.
+        """
+        try:
+            # Index for time-series price queries (most common in trading algorithms)
+            await conn.execute(
+                text("""
+                CREATE INDEX IF NOT EXISTS idx_historical_prices_symbol_timestamp
+                ON historical_prices (symbol, timestamp DESC)
+            """)
+            )
+
+            # Index for volume analysis (important for liquidity assessment)
+            await conn.execute(
+                text("""
+                CREATE INDEX IF NOT EXISTS idx_historical_prices_volume_analysis
+                ON historical_prices (symbol, timestamp DESC, volume)
+                WHERE volume > 0
+            """)
+            )
+
+            # Index for news sentiment analysis queries
+            await conn.execute(
+                text("""
+                CREATE INDEX IF NOT EXISTS idx_historical_news_sentiment_time
+                ON historical_news (created_at DESC, sentiment_score)
+                WHERE sentiment_score IS NOT NULL
+            """)
+            )
+
+            # Index for symbol-specific news searches
+            await conn.execute(
+                text("""
+                CREATE INDEX IF NOT EXISTS idx_historical_news_symbols_gin
+                ON historical_news USING GIN (symbols)
+            """)
+            )
+
+            logger.info("✅ Trading-optimized indexes created successfully")
+
+        except Exception as e:
+            logger.warning(f"⚠️  Some indexes may already exist or failed to create: {e}")
+
     @asynccontextmanager
     async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
         """

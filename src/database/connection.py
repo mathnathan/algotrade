@@ -11,7 +11,7 @@ from typing import AsyncGenerator, Any
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import text
 
-from src.config.database_config import DatabaseConfig
+from src.config.settings import DatabaseConfig
 from src.database.monitoring import DatabaseMetrics
 
 logger = logging.getLogger(__name__)

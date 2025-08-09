@@ -20,7 +20,6 @@ def init_alembic():
     """
     Initialize Alembic migration repository.
 
-    This is like setting up the blueprint filing system for your building project.
     Once initialized, Alembic can track and apply database structure changes
     systematically across all environments.
 
@@ -70,9 +69,9 @@ project_root = r"{project_root}"
 sys.path.insert(0, project_root)
 
 # Import our models so Alembic can detect schema changes
-from src.models.base import Base
-from src.models.price_data import HistoricalPrice
-from src.models.news_data import HistoricalNews
+from src.data.base import Base
+from src.data.price_data import HistoricalPrice
+from src.data.news_data import HistoricalNews
 
 # This is the Alembic Config object
 config = context.config
@@ -128,10 +127,36 @@ else:
         logger.info(f"📁 Migration repository: {alembic_dir}")
         logger.info(f"⚙️  Configuration file: {alembic_ini}")
 
+        # Add this at the end before return True:
+        if not (alembic_dir / "versions").glob("*.py"):
+            logger.info("🔧 Creating initial migration...")
+            create_initial_migration()
+
         return True
 
     except Exception as e:
         logger.error(f"❌ Failed to initialize Alembic: {e}")
+        raise
+
+
+def create_initial_migration():
+    """Create the initial migration that captures baseline schema."""
+    try:
+        project_root = Path(__file__).parent.parent.parent
+        alembic_cfg_path = project_root / "alembic.ini"
+
+        if not alembic_cfg_path.exists():
+            raise FileNotFoundError("Alembic not initialized")
+
+        alembic_cfg = Config(str(alembic_cfg_path))
+
+        # Create initial migration capturing current model state
+        command.revision(alembic_cfg, message="Initial database schema", autogenerate=True)
+        logger.info("✅ Created initial migration")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Failed to create initial migration: {e}")
         raise
 
 

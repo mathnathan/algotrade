@@ -3,7 +3,7 @@
 Alembic environment configuration for trading bot.
 
 This file configures how database migrations are executed, ensuring
-your trading system's database schema evolves safely and predictably.
+the trading system's database schema evolves safely and predictably.
 """
 
 import os

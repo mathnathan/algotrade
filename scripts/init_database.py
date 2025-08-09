@@ -239,13 +239,9 @@ async def initialize_trading_database():
             raise Exception("Database connectivity could not be established")
 
         # Step 2: Create or update schema
-        try:
-            logger.info("🔄 Attempting migration-based schema update...")
-            await run_migrations()
-            logger.info("✅ Database migrations completed successfully")
-        except Exception as migration_error:
-            logger.warning(f"⚠️  Migration failed, using direct table creation: {migration_error}")
-            await create_database_schema()
+        logger.info("🔄 Running database migrations...")
+        await run_migrations()
+        logger.info("✅ Database migrations completed successfully")
 
         # Step 3: Verify system readiness
         await verify_data_models()

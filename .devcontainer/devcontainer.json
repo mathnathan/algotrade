@@ -19,8 +19,7 @@
                     "editor.codeActionsOnSave": {
                         "source.fixAll.ruff": "explicit",
                         "source.organizeImports.ruff": "explicit"
-                    },
-                    "editor.defaultFormatter": "charliermarsh.ruff"
+                    }
                 },
                 "ruff.nativeServer": true,
                 "notebook.formatOnSave.enabled": true,

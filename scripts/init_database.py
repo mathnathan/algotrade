@@ -160,7 +160,7 @@ async def initialize_trading_database():
 
         # Step 3: Apply all migrations (including the initial one)
         logger.info("🔄 Running database migrations...")
-        await run_migrations()
+        run_migrations()
         logger.info("✅ Database migrations completed successfully")
 
         # Step 4: Verify system readiness

@@ -216,29 +216,27 @@ def create_initial_migration():
         raise
 
 
-async def run_migrations():
+def run_migrations():  # Remove 'async' keyword
     """
-    Run database migrations to latest version.
-
-    This is like following a cookbook to build your database structure.
-    Each migration is a recipe step that transforms the database
-    from one version to the next.
+    Run database migrations to latest version
+    
     """
     try:
-        # Get project root directory
         project_root = Path(__file__).parent.parent.parent
         alembic_cfg_path = project_root / "alembic.ini"
 
         if not alembic_cfg_path.exists():
-            logger.warning("⚠️  No alembic.ini found - creating tables directly")
-            from src.database.connection import db_manager
-
-            await db_manager.create_tables()
+            logger.warning("⚠️  No alembic.ini found - cannot run migrations")
             return
 
-        # Configure Alembic
+        # Configure Alembic with sync database URL
         alembic_cfg = Config(str(alembic_cfg_path))
-
+        
+        # Get sync URL
+        sync_url = settings.database.sync_url
+        
+        alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
+        
         # Run migrations
         logger.info("🔄 Running database migrations...")
         command.upgrade(alembic_cfg, "head")

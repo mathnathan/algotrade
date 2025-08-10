@@ -1,4 +1,3 @@
-# alembic/env.py
 """
 Alembic environment configuration for trading bot.
 
@@ -12,16 +11,18 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from sqlalchemy import engine_from_config, pool
-
 from alembic import context
-
-# Import our models so Alembic can detect schema changes
-from src.data.base import Base
 
 # Add the project root to Python path so we can import our models
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import our models so Alembic can detect schema changes
+# This is the critical step that populates Base.metadata with your table definitions
+from src.data.base import Base
+from src.data.price_data import HistoricalPrice
+from src.data.news_data import HistoricalNews
+# Add imports for any other model files you create in src.data
 
 # This is the Alembic Config object, which provides access to configuration values
 config = context.config
@@ -63,7 +64,7 @@ def run_migrations_online():
     """
     # Override the database URL with environment variable if present
     # This ensures migrations use the same connection as your trading application
-    database_url = os.getenv("DATABASE_URL")
+    database_url = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
     if database_url:
         config.set_main_option("sqlalchemy.url", database_url)
 

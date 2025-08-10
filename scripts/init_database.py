@@ -54,91 +54,6 @@ async def wait_for_database(max_retries: int = 30, delay: float = 2.0) -> bool:
     return False
 
 
-async def create_database_schema():
-    """
-    Create all database tables and indexes using the DatabaseManager.
-
-    This leverages our enhanced DatabaseManager to create a production-ready
-    database schema optimized for trading data storage and retrieval.
-    """
-    try:
-        logger.info("🏗️  Creating trading database schema...")
-
-        # Use the DatabaseManager's create_tables method
-        await db_manager.create_tables()
-
-        # Verify the schema was created correctly
-        await _verify_schema_integrity()
-
-        logger.info("✅ Database schema created and verified successfully")
-
-    except Exception as e:
-        logger.error(f"❌ Schema creation failed: {e}")
-        raise
-
-
-async def _verify_schema_integrity():
-    """
-    Verify that our database schema supports all required trading operations.
-
-    This is like a pre-flight check before takeoff - ensuring all systems
-    are properly configured for live trading operations.
-    """
-    async with db_manager.get_session() as session:
-        from sqlalchemy import text
-
-        # Check that core tables exist with expected structure
-        result = await session.execute(
-            text("""
-            SELECT
-                table_name,
-                COUNT(*) as column_count
-            FROM information_schema.columns
-            WHERE table_schema = 'public'
-            AND table_name IN ('historical_prices', 'historical_news')
-            GROUP BY table_name
-            ORDER BY table_name
-        """)
-        )
-
-        tables = {row[0]: row[1] for row in result.fetchall()}
-
-        # Verify table structure matches our expectations
-        expected_tables = {
-            "historical_prices": 12,  # Expected number of columns
-            "historical_news": 20,  # Expected number of columns (adjust based on your models)
-        }
-
-        for table_name, expected_columns in expected_tables.items():
-            if table_name not in tables:
-                raise Exception(f"Required table '{table_name}' not found")
-
-            actual_columns = tables[table_name]
-            if actual_columns < expected_columns:
-                logger.warning(
-                    f"⚠️  Table '{table_name}' has {actual_columns} columns, expected at least {expected_columns}"
-                )
-
-        # Verify critical indexes exist for trading performance
-        result = await session.execute(
-            text("""
-            SELECT indexname, tablename
-            FROM pg_indexes
-            WHERE schemaname = 'public'
-            AND indexname LIKE 'idx_%'
-            ORDER BY tablename, indexname
-        """)
-        )
-
-        indexes = result.fetchall()
-        if indexes:
-            logger.info("📈 Trading-optimized indexes found:")
-            for index_name, table_name in indexes:
-                logger.info(f"  • {table_name}.{index_name}")
-
-        logger.info("✅ Schema integrity verification completed")
-
-
 async def verify_data_models():
     """
     Test data models with realistic trading data scenarios.
@@ -224,10 +139,11 @@ async def verify_data_models():
 
 async def initialize_trading_database():
     """
-    Complete trading database initialization with enhanced error handling.
-
-    This orchestrates the entire setup process with the reliability standards
-    expected in production trading environments.
+    Complete trading database initialization using Alembic-only approach.
+    
+    This streamlined version eliminates the dual-path confusion by using
+    only Alembic migrations for all schema management. This ensures every
+    database change is tracked and reproducible.
     """
     initialization_start = asyncio.get_event_loop().time()
 
@@ -238,19 +154,19 @@ async def initialize_trading_database():
         if not await wait_for_database():
             raise Exception("Database connectivity could not be established")
 
-        # Step 2: Create or update schema
-        try:
-            logger.info("🔄 Attempting migration-based schema update...")
-            await run_migrations()
-            logger.info("✅ Database migrations completed successfully")
-        except Exception as migration_error:
-            logger.warning(f"⚠️  Migration failed, using direct table creation: {migration_error}")
-            await create_database_schema()
+        # Step 2: Initialize Alembic system (creates initial migration if needed)
+        from src.database.migrations import init_alembic
+        init_alembic()
 
-        # Step 3: Verify system readiness
+        # Step 3: Apply all migrations (including the initial one)
+        logger.info("🔄 Running database migrations...")
+        await run_migrations()
+        logger.info("✅ Database migrations completed successfully")
+
+        # Step 4: Verify system readiness
         await verify_data_models()
 
-        # Step 4: Performance baseline
+        # Step 5: Performance baseline
         pool_status = await db_manager.get_pool_status()
         logger.info(f"📊 Connection pool status: {pool_status}")
 
@@ -258,25 +174,18 @@ async def initialize_trading_database():
         logger.info(f"⏱️  Total initialization time: {initialization_time:.2f} seconds")
 
         logger.info("🎉 Trading database initialization completed successfully!")
-        logger.info("📋 System ready for:")
-        logger.info("  ✅ Real-time Alpaca market data ingestion")
-        logger.info("  ✅ High-frequency price and volume analysis")
-        logger.info("  ✅ News sentiment correlation with price movements")
-        logger.info("  ✅ Historical backtesting and strategy development")
-        logger.info("  🎯 Production-grade algorithmic trading operations!")
 
     except Exception as e:
         logger.error(f"💥 Trading database initialization failed: {e}")
         logger.error("🔧 Troubleshooting steps:")
         logger.error("  1. Verify PostgreSQL is running and accessible")
-        logger.error("  2. Check DATABASE_URL environment variable")
+        logger.error("  2. Check environment variables in .env file")
         logger.error("  3. Ensure database user has CREATE privileges")
-        logger.error("  4. Review connection pool configuration")
+        logger.error("  4. Review Alembic configuration in alembic.ini")
         raise
     finally:
         # Always clean up resources
         await db_manager.close()
-
 
 async def main():
     """Entry point for database initialization."""

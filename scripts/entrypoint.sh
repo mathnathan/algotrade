@@ -58,7 +58,7 @@ setup_alembic() {
     
     log_info "Creating Alembic migration repository..."
     
-    # Run our Python initialization script
+    # Step 1: Initialize Alembic 
     uv run python -c "
 import sys
 from pathlib import Path
@@ -69,6 +69,22 @@ init_alembic()
     
     if [ $? -eq 0 ]; then
         log_success "Alembic migration system initialized successfully"
+        
+        # Step 2: Create initial migration
+        log_info "Creating initial database migration..."
+        uv run python -c "
+import sys
+from pathlib import Path
+sys.path.insert(0, '/workspace')
+from src.database.migrations import create_initial_migration
+create_initial_migration()
+        "
+        
+        if [ $? -eq 0 ]; then
+            log_success "Initial migration created successfully"
+        else
+            log_warning "Could not create initial migration - will create tables directly"
+        fi
     else
         log_error "Failed to initialize Alembic"
         exit 1

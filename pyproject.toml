@@ -16,6 +16,7 @@ dependencies = [
     "pydantic>=2.4.0",
     "httpx>=0.25.0",
     "asyncpg>=0.30.0",
+    "psycopg2-binary>=2.9.0",
     "matplotlib>=3.10.3",
     "seaborn>=0.13.2",
     "pydantic-settings>=2.10.1",

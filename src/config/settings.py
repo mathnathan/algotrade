@@ -95,13 +95,21 @@ class DatabaseConfig(BaseSettings):
 
     @property
     def async_url(self) -> str:
-        return (
-            f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
-        )
+        """Async URL for trading operations - high performance with asyncpg."""
+        return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+    
+    @property
+    def sync_url(self) -> str:
+        """Sync URL for migrations and administrative tasks - uses psycopg2."""
+        return f"postgresql+psycopg2://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
 
     @property
-    def masked_url(self) -> str:
+    def masked_async_url(self) -> str:
         return f"postgresql+asyncpg://{self.user}:***@{self.host}:{self.port}/{self.name}"
+        
+    @property 
+    def masked_sync_url(self) -> str:
+        return f"postgresql+psycopg2://{self.user}:***@{self.host}:{self.port}/{self.name}"
 
 
 class AlpacaConfig(BaseSettings):

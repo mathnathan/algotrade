@@ -104,7 +104,7 @@ class DatabaseManager:
             autocommit=False,  # Explicit transaction control
         )
 
-        logger.info(f"🔗 Database engine created: {self.config.masked_url}")
+        logger.info(f"🔗 Database engine created: {self.config.masked_async_url}")
 
     async def _validate_connection(self) -> None:
         """

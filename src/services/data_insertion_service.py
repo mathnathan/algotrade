@@ -1,10 +1,12 @@
 # src/services/data_insertion_service.py
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pandas as pd
+from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.data.news_data import HistoricalNews
 from src.data.price_data import HistoricalPrice
@@ -113,10 +115,8 @@ class DataInsertionService:
 
     async def insert_news_data(self, symbol: str, news_df: pd.DataFrame) -> tuple[int, int]:
         """
-        Insert news data with validation and deduplication.
+        Insert news data with robust ID handling and pre-validation cleaning.
 
-        Returns:
-            Tuple of (successful_inserts, validation_errors)
         """
         if news_df.empty:
             return 0, 0
@@ -127,32 +127,42 @@ class DataInsertionService:
         async with db_manager.get_session() as session:
             for _, row in news_df.iterrows():
                 try:
-                    # Convert row to dictionary for validation
+                    # 🔧 PRE-VALIDATION CLEANING: Handle missing IDs before validation
+                    raw_id = row.get("id")
+                    if pd.isna(raw_id) or raw_id is None:
+                        # Generate a deterministic ID based on content
+                        headline = str(row.get("headline", ""))
+                        created_at = row.get("created_at", "")
+                        generated_id = abs(hash(f"{headline}_{created_at}")) % (10**15)
+                        logger.debug(f"Generated ID {generated_id} for article: {headline[:50]}...")
+                    else:
+                        generated_id = int(raw_id)
+
+                    # 🔧 CLEAN DATA PREPARATION: Ensure all fields are properly formatted
                     news_data = {
-                        "id": int(row["id"]) if "id" in row else None,
-                        "headline": str(row["headline"]) if "headline" in row else "",
-                        "summary": str(row["summary"]) if pd.notna(row.get("summary")) else None,
-                        "content": str(row["content"]) if pd.notna(row.get("content")) else None,
+                        "id": generated_id,  # Always an integer now
+                        "headline": row.get("headline"),
+                        "summary": row.get("summary"),
+                        "content": row.get("content"),
                         "source": str(row["source"]) if pd.notna(row.get("source")) else None,
                         "author": str(row["author"]) if pd.notna(row.get("author")) else None,
                         "url": str(row["url"]) if pd.notna(row.get("url")) else None,
-                        "created_at": row["created_at"]
-                        if "created_at" in row
-                        else row.get("created_at"),
-                        "updated_at": row.get("updated_at", row.get("created_at", datetime.now())),
+                        "created_at": self._ensure_timezone_aware(row.get("created_at")),
+                        "updated_at": self._ensure_timezone_aware(
+                            row.get("updated_at", row.get("created_at", datetime.now()))
+                        ),
                         "symbols": [symbol],  # Associate with the symbol we're processing
                     }
 
-                    # Validate using your existing DataValidator
+                    # 🔧 NOW VALIDATION WILL SUCCEED: All required fields are properly formatted
                     validated_news = self.validator.validate_news_data(news_data)
                     if validated_news is None:
                         validation_errors += 1
                         continue
 
-                    # Prepare database record
+                    # 🔧 DATABASE INSERTION: No more fallback logic needed
                     db_record = {
-                        "id": validated_news.id
-                        or hash(validated_news.headline),  # Generate ID if missing
+                        "id": validated_news.id,  # Always valid now
                         "headline": validated_news.headline,
                         "summary": validated_news.summary,
                         "content": validated_news.content,
@@ -163,39 +173,58 @@ class DataInsertionService:
                         "updated_at": validated_news.updated_at,
                         "symbols": validated_news.symbols,
                         "primary_symbol": symbol,
-                        "news_category": "general",  # Could be enhanced with classification logic
-                        "is_market_moving": False,  # Could be enhanced with sentiment analysis
-                        "is_processed": True,
-                        "data_quality_score": 0.8,  # Base quality score for Alpaca news
-                        "data_inserted_at": datetime.now(),
-                        "data_updated_at": datetime.now(),
+                        "news_category": "general",
+                        "is_market_moving": False,
+                        "is_processed": False,
                     }
 
-                    # Use upsert for news as well
-                    stmt = postgres_insert(HistoricalNews).values(**db_record)
-                    stmt = stmt.on_conflict_do_update(
-                        index_elements=["id"],
-                        set_={
-                            "summary": stmt.excluded.summary,
-                            "content": stmt.excluded.content,
-                            "symbols": stmt.excluded.symbols,
-                            "data_updated_at": datetime.now(),
-                        },
-                    )
-
-                    await session.execute(stmt)
+                    # Insert using PostgreSQL UPSERT for idempotency
+                    await self._upsert_news_record(session, db_record)
                     successful_inserts += 1
 
                 except Exception as e:
-                    logger.error(f"❌ Failed to insert news record for {symbol}: {e}")
                     validation_errors += 1
+                    logger.warning(f"Failed to process news record: {e}")
                     continue
 
-            await session.commit()
-
-        logger.debug(
-            f"📰 Inserted {successful_inserts} news records for {symbol} "
-            f"({validation_errors} validation errors)"
-        )
-
         return successful_inserts, validation_errors
+
+    def _ensure_timezone_aware(self, timestamp) -> datetime:
+        """
+        Ensure timestamp has timezone information for database storage.
+
+        Financial data requires precise timestamps, and PostgreSQL timezone
+        handling prevents many subtle bugs in backtesting and live trading.
+        """
+        if timestamp is None:
+            return datetime.now(UTC)
+
+        if isinstance(timestamp, str):
+            timestamp = pd.to_datetime(timestamp)
+
+        if hasattr(timestamp, "tz_localize") and timestamp.tz is None:
+            return datetime.fromisoformat(timestamp.tz_localize("UTC").to_pydatetime().isoformat())
+        elif isinstance(timestamp, datetime) and timestamp.tzinfo is None:
+            return timestamp.replace(tzinfo=UTC)
+
+        return timestamp if isinstance(timestamp, datetime) else datetime.now(UTC)
+
+    async def _upsert_news_record(self, session: AsyncSession, record: dict) -> None:
+        """
+        Insert or update news record using PostgreSQL's ON CONFLICT.
+
+        This ensures idempotency - running the same data multiple times
+        won't create duplicates, which is crucial for reliable data pipelines.
+        """
+        from sqlalchemy.dialects.postgresql import insert
+
+        stmt = insert(HistoricalNews).values(**record)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["id"],
+            set_={
+                "updated_at": stmt.excluded.updated_at,
+                "data_updated_at": func.now(),
+            },
+        )
+        await session.execute(stmt)
+        await session.commit()

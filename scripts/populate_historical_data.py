@@ -25,6 +25,8 @@ import asyncio
 import logging
 from datetime import datetime
 
+from alpaca.data.timeframe import TimeFrame
+
 from src.database.connection import db_manager
 from src.services.alpaca_service import AlpacaService
 from src.services.data_insertion_service import DataInsertionService
@@ -124,7 +126,10 @@ class HistoricalDataPopulator:
 
             # Use the bulk method to get chunked data
             async for _chunk_symbol, price_df in self.alpaca_service.fetch_bulk_historical_prices(
-                symbols=[symbol], start_date=start_date, end_date=end_date
+                symbols=[symbol],
+                start_date=start_date,
+                end_date=end_date,
+                timeframe=TimeFrame.Minute,
             ):
                 # Insert this chunk
                 (
@@ -170,7 +175,9 @@ class HistoricalDataPopulator:
 
             # Use the bulk method to get chunked news data
             async for _chunk_symbol, news_df in self.alpaca_service.fetch_bulk_news_data(
-                symbols=[symbol], start_date=start_date, end_date=end_date
+                symbols=[symbol],
+                start_date=start_date,
+                end_date=end_date,
             ):
                 # Insert this chunk
                 records_inserted, validation_errors = await self.insertion_service.insert_news_data(

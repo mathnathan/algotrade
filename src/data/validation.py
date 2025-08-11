@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Any, ClassVar
 
 # Third-party imports
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,22 @@ class ValidatedNews(BaseModel):
     images: dict[str, Any] | None = Field(None, description="Associated images")
     sentiment: float | None = Field(None, ge=-1.0, le=1.0, description="Sentiment score")
 
+    @field_validator("headline", "summary", "content")
+    @classmethod
+    def clean_text_fields(cls, v):
+        """
+        Clean text fields but don't reject empty strings at field level.
+
+        """
+        if v is None:
+            return None
+
+        # Clean the text but allow empty strings to pass through
+        cleaned = str(v).strip()
+
+        # Return None for empty strings to simplify business logic
+        return cleaned if cleaned else None
+
     @field_validator("created_at", "updated_at")
     @classmethod
     def timestamps_must_have_timezone(cls, v):
@@ -149,13 +165,45 @@ class ValidatedNews(BaseModel):
 
         return v
 
-    @field_validator("headline", "summary", "content")
-    @classmethod
-    def text_fields_must_not_be_empty(cls, v):
-        """Ensure text fields are not just whitespace."""
-        if v is not None and v.strip() == "":
-            raise ValueError("Text fields cannot be empty or just whitespace")
-        return v
+    @model_validator(mode="after")
+    def validate_content_requirements(self):
+        """
+        Business rule validation: (headline OR summary OR content) must be present.
+
+        Model validators run after all field validators have passed, ensuring we're
+        working with clean, properly formatted data.
+        """
+        headline = self.headline
+        summary = self.summary
+        content = self.content
+
+        # Check if we have at least one meaningful piece of content
+        has_headline = headline is not None and len(headline.strip()) > 0
+        has_summary = summary is not None and len(summary.strip()) > 0
+        has_content = content is not None and len(content.strip()) > 0
+
+        if not (has_headline or has_summary or has_content):
+            raise ValueError(
+                "Article must have at least a non-empty headline OR a non-empty summary. "
+                f"Got headline: '{headline}', summary: '{summary}'"
+            )
+
+        # Additional business rule: If we only have a summary, it should be substantial
+        if not has_headline and has_summary and len(summary.strip()) < 10:
+            raise ValueError("If headline is missing, summary must be at least 10 characters long")
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_timestamp_logic(self):
+        """
+        Business rule: updated_at should not be before created_at.
+
+        """
+        if self.updated_at < self.created_at:
+            raise ValueError("Updated timestamp cannot be before created timestamp")
+
+        return self
 
 
 class DataValidator:

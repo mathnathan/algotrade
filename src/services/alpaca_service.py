@@ -176,52 +176,44 @@ class AlpacaService:
         return pd.Series(result, dtype="object")
 
     async def fetch_news_data(
-        self, comma_separated_symbols: str, days_back: int = 30, max_articles: int = 1000
+        self,
+        comma_separated_symbols: str,
+        start_date: datetime,
+        end_date: datetime,
+        max_articles: int = 10000,  # Increased default for full ranges
     ) -> pd.DataFrame:
         """
-        Fetch news data for sentiment analysis and model training.
+        Fetch news data for complete date range using.
 
-        News as Alpha Signal
-        News sentiment can provide alpha by capturing market psychology before it's
-        fully reflected in prices. The challenge is separating signal from noise.
-
-        For SPY, relevant news includes:
-        1. Macro-economic data (Fed announcements, GDP, employment)
-        2. Market-wide sentiment (analyst outlooks, volatility indices)
-        3. Sector rotation news (tech, finance, healthcare trends)
-        4. Geopolitical events affecting US markets
         """
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days_back)
 
         request = NewsRequest(
-            symbols=comma_separated_symbols, start=start_date, end=end_date, limit=max_articles
+            symbols=comma_separated_symbols,
+            start=start_date,
+            end=end_date,
+            limit=max_articles,  # API will paginate if more articles exist
         )
 
-        news = self.news_client.get_news(request)
-        news_df = news.df.reset_index()
-        # Take a peak at the data structure
-        print(news_df.columns)
-        print(news_df.head())
-
         try:
+            # Single API call - pagination handled automatically
             news = self.news_client.get_news(request)
             news_df = news.df.reset_index()
+
+            logger.debug(f"📰 API returned {len(news_df)} articles")
 
             if news_df.empty:
                 return pd.DataFrame(
                     columns=["created_at", "headline", "summary", "symbols", "source", "url"]
                 )
 
-            # Filter and clean news based on our configuration
+            # Apply your business logic filters
             news_df = self._filter_news_by_relevance(news_df)
-
-            # Sort by publication time (most recent first)
             news_df = news_df.sort_values("created_at", ascending=False)
 
-            # Ensure all expected columns exist, fill missing with NaN
+            # Ensure consistent column structure
             expected_cols = ["created_at", "headline", "summary", "symbols", "source", "url"]
             result_df = news_df.reindex(columns=expected_cols).reset_index(drop=True)
+
             return pd.DataFrame(result_df)
 
         except Exception as e:
@@ -334,146 +326,141 @@ class AlpacaService:
         start_date: datetime,
         end_date: datetime,
         timeframe: TimeFrame = TimeFrame.Day,
-        chunk_size_days: int = 30,
-        delay_range: tuple[float, float] = (0.3, 0.8),
+        delay_range: tuple[float, float] = (0.1, 0.3),
     ) -> AsyncGenerator[tuple[str, pd.DataFrame], None]:
         """
-        Fetch historical price data in chunks with rate limiting.
+        Strategic chunking for large historical price datasets.
 
-        Args:
-            symbols: List of stock symbols to fetch data for
-            start_date: Beginning of historical data range
-            end_date: End of historical data range
-            chunk_size_days: Number of days to fetch per API call
-            delay_range: Random delay between requests (min, max seconds)
-
-        Yields:
-            Tuple of (symbol, dataframe) for each successful chunk
+        We chunk by logical units (bar count or timeframe-appropriate
+        periods) rather than arbitrary calendar periods.
         """
-        total_symbols = len(symbols)
 
-        for symbol_idx, symbol in enumerate(symbols):
-            logger.info(f"🔄 Processing symbol {symbol} ({symbol_idx + 1}/{total_symbols})")
+        for symbol in symbols:
+            logger.info(f"🔄 Processing {symbol} from {start_date.date()} to {end_date.date()}")
 
-            # Calculate date chunks for this symbol
+            # Calculate appropriate chunk size based on timeframe
+            if timeframe == TimeFrame.Minute:
+                chunk_days = 30  # ~11,700 minute bars per month
+            elif timeframe == TimeFrame.Hour:
+                chunk_days = 180  # ~6 months of hourly data
+            elif timeframe == TimeFrame.Day:
+                chunk_days = 365  # 1 year of daily data
+            else:
+                chunk_days = 30  # Conservative default
+
             current_date = start_date
             chunk_count = 0
 
             while current_date < end_date:
-                chunk_end = min(current_date + timedelta(days=chunk_size_days), end_date)
+                chunk_end = min(current_date + timedelta(days=chunk_days), end_date)
                 chunk_count += 1
 
                 try:
-                    days_back = (datetime.now() - current_date).days
-                    chunk_df = await self.fetch_historical_prices(
-                        symbol_or_symbols=symbol, days_back=days_back, timeframe=timeframe
+                    chunk_df = await self.fetch_historical_prices_range(
+                        symbol_or_symbols=symbol,
+                        start_date=current_date,
+                        end_date=chunk_end,
+                        timeframe=timeframe,
                     )
 
-                    # Filter to exact date range (our method uses days_back, so we filter)
                     if not chunk_df.empty:
-                        # Convert our naive datetime objects to timezone-aware (UTC) to match Alpaca data
-                        current_date_tz = pd.Timestamp(current_date, tz="UTC")
-                        chunk_end_tz = pd.Timestamp(chunk_end, tz="UTC")
+                        logger.info(
+                            f"✅ Fetched {len(chunk_df)} {timeframe} bars for {symbol} chunk {chunk_count}"
+                        )
+                        yield symbol, chunk_df
 
-                        chunk_df = chunk_df[
-                            (chunk_df["timestamp"] >= current_date_tz)
-                            & (chunk_df["timestamp"] < chunk_end_tz)
-                        ]
-
-                        if not chunk_df.empty:
-                            logger.debug(
-                                f"✅ Fetched {len(chunk_df)} records for {symbol} chunk {chunk_count}"
-                            )
-                            yield symbol, chunk_df
-                        else:
-                            logger.debug(
-                                f"⚠️  No data in date range for {symbol} chunk {chunk_count}"
-                            )
-
-                    # Implement "good citizen" delay with randomization
-                    # Random delays prevent multiple data collectors from synchronizing
-                    # and creating unintentional burst load on the API
+                    # Smart delay based on data volume
                     delay = random.uniform(*delay_range)
                     await asyncio.sleep(delay)
 
                 except Exception as e:
                     logger.error(f"❌ Failed to fetch {symbol} chunk {chunk_count}: {e}")
-                    # Continue with next chunk rather than failing entirely
                     continue
 
                 current_date = chunk_end
+
+    async def fetch_historical_prices_range(
+        self,
+        symbol_or_symbols: str | list[str],
+        start_date: datetime,
+        end_date: datetime,
+        timeframe: TimeFrame = TimeFrame.Day,
+    ) -> pd.DataFrame:
+        """
+        Fetch price data for exact date range - no more days_back confusion!
+
+        This method properly uses the provided start and end dates instead of
+        always fetching data relative to "now".
+        """
+
+        symbol_or_symbols = (
+            [symbol_or_symbols] if isinstance(symbol_or_symbols, str) else symbol_or_symbols
+        )
+
+        request = StockBarsRequest(
+            symbol_or_symbols=symbol_or_symbols,
+            timeframe=timeframe,
+            start=start_date,  # 🔧 FIXED: Use actual start date
+            end=end_date,  # 🔧 FIXED: Use actual end date
+            feed=DataFeed.SIP,
+            asof=None,
+            adjustment=Adjustment.RAW,
+        )
+
+        try:
+            bars = self.stock_data_client.get_stock_bars(request)
+            df = bars.df.reset_index()
+
+            if df.empty:
+                return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
+
+            # Add your technical indicators and features
+            df["returns"] = df["close"].pct_change()
+            df["volatility"] = df["returns"].rolling(window=20).std()
+            df["volume_sma"] = df["volume"].rolling(window=20).mean()
+            df["session"] = self._classify_trading_session(df)
+
+            return df.dropna().reset_index(drop=True)
+
+        except Exception as e:
+            raise Exception(f"Failed to fetch price data for {symbol_or_symbols}: {e}") from e
 
     async def fetch_bulk_news_data(
         self,
         symbols: list[str],
         start_date: datetime,
         end_date: datetime,
-        chunk_size_days: int = 7,  # News data is denser, so smaller chunks
-        max_articles_per_chunk: int = 100,
-        delay_range: tuple[float, float] = (0.3, 0.8),
+        max_articles_per_symbol: int = 10000,  # Let API handle limits
+        delay_between_symbols: float = 1.0,
     ) -> AsyncGenerator[tuple[str, pd.DataFrame], None]:
         """
-        Fetch historical news data in chunks with rate limiting.
-
-        Args:
-            symbols: List of symbols to fetch news for
-            start_date: Beginning of news data range
-            end_date: End of news data range
-            chunk_size_days: Smaller chunks for news (typically 3-7 days)
-            max_articles_per_chunk: Limit articles per request
-            delay_range: Random delay between requests
-
-        Yields:
-            Tuple of (symbol, news_dataframe) for each successful chunk
+        Fetch historical news data using API pagination.
         """
         total_symbols = len(symbols)
 
         for symbol_idx, symbol in enumerate(symbols):
             logger.info(f"📰 Processing news for {symbol} ({symbol_idx + 1}/{total_symbols})")
+            logger.info(f"📅 Date range: {start_date.date()} to {end_date.date()}")
 
-            current_date = start_date
-            chunk_count = 0
+            try:
+                # Single call - let API handle all pagination
+                news_df = await self.fetch_news_data(
+                    comma_separated_symbols=symbol,
+                    start_date=start_date,
+                    end_date=end_date,
+                    max_articles=max_articles_per_symbol,
+                )
 
-            while current_date < end_date:
-                chunk_end = min(current_date + timedelta(days=chunk_size_days), end_date)
-                chunk_count += 1
+                if not news_df.empty:
+                    logger.info(f"✅ Retrieved {len(news_df)} news articles for {symbol}")
+                    yield symbol, news_df
+                else:
+                    logger.info(f"ℹ️ No news found for {symbol} in date range")
 
-                try:
-                    days_back = (datetime.now() - current_date).days
-                    chunk_df = await self.fetch_news_data(
-                        comma_separated_symbols=symbol,
-                        days_back=days_back,
-                        max_articles=max_articles_per_chunk,
-                    )
+                # Rate limiting between symbols
+                if symbol_idx < total_symbols - 1:  # Don't delay after last symbol
+                    await asyncio.sleep(delay_between_symbols)
 
-                    # Filter to exact date range
-                    if not chunk_df.empty and "created_at" in chunk_df.columns:
-                        chunk_df["created_at"] = pd.to_datetime(chunk_df["created_at"])
-                        # Convert dates to timezone-aware for comparison
-                        current_date_tz = pd.Timestamp(current_date, tz="UTC")
-                        chunk_end_tz = pd.Timestamp(chunk_end, tz="UTC")
-
-                        chunk_df = chunk_df[
-                            (chunk_df["created_at"] >= current_date_tz)
-                            & (chunk_df["created_at"] < chunk_end_tz)
-                        ]
-
-                        if not chunk_df.empty:
-                            logger.debug(
-                                f"📰 Fetched {len(chunk_df)} news articles for {symbol} chunk {chunk_count}"
-                            )
-                            yield symbol, chunk_df
-                        else:
-                            logger.debug(
-                                f"⚠️  No news in date range for {symbol} chunk {chunk_count}"
-                            )
-
-                    # News APIs often have stricter rate limits, so slightly longer delays
-                    delay = random.uniform(*delay_range)
-                    await asyncio.sleep(delay)
-
-                except Exception as e:
-                    logger.error(f"❌ Failed to fetch news for {symbol} chunk {chunk_count}: {e}")
-                    continue
-
-                current_date = chunk_end
+            except Exception as e:
+                logger.error(f"❌ Failed to fetch news for {symbol}: {e}")
+                continue

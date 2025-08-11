@@ -84,6 +84,7 @@ ignore = [
     "S301",   # pickle usage (needed for model serialization)
     "T201",   # print statements (useful during development)
     "E501",   # line too long (handled by formatter)
+    "S311",   # random number generators (for cryptographic work)
 ]
 
 exclude = [

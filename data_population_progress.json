@@ -1,0 +1,19 @@
+{
+  "session_start_time": "2025-08-11T02:24:31.008050",
+  "last_updated": "2025-08-11T02:27:03.117863",
+  "symbols": {
+    "SPY": {
+      "symbol": "SPY",
+      "start_date": "2014-01-01T00:00:00",
+      "end_date": "2025-08-11T02:24:31.008237",
+      "prices_status": "completed",
+      "news_status": "in_progress",
+      "prices_records_collected": 2381,
+      "news_records_collected": 0,
+      "last_processed_date": "2025-08-11T02:27:03.117853",
+      "error_count": 0,
+      "last_error": null,
+      "processing_time_seconds": 0.0
+    }
+  }
+}

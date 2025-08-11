@@ -54,13 +54,13 @@ class EmbeddingService:
         """
         try:
             model = SentenceTransformer(
-                settings.embedding_model,
-                cache_folder=str(settings.huggingface_cache_dir),
+                settings.huggingface.embedding_model,
+                cache_folder=str(settings.huggingface.cache_dir),
                 device="cpu",
             )
             # Optimize for financial headline length
             model.max_seq_length = 256
-            logger.info(f"Loaded embedding model: {settings.embedding_model}")
+            logger.info(f"Loaded embedding model: {settings.huggingface.embedding_model}")
             return model
         except Exception as e:
             logger.error(f"Failed to load embedding model: {e}")
@@ -106,7 +106,7 @@ class EmbeddingService:
                 convert_to_numpy=True,
                 normalize_embeddings=True,  # Normalize for stable training
             )
-            return embedding
+            return np.asarray(embedding)
         except Exception as e:
             logger.error(f"Failed to generate embedding for headline: {e}")
             return np.zeros(self.embedding_dim)
@@ -189,11 +189,11 @@ class EmbeddingService:
             weights.append(weight)
 
         # Normalize weights
-        weights = np.array(weights)
-        weights = weights / np.sum(weights)
+        weights_array = np.array(weights)
+        weights = weights_array / np.sum(weights_array)
 
         # Weighted combination of embeddings
-        combined_embedding = np.average(embeddings, axis=0, weights=weights)
+        combined_embedding: np.ndarray = np.average(embeddings, axis=0, weights=weights)
 
         # Renormalize the combined embedding
         norm = np.linalg.norm(combined_embedding)
@@ -291,7 +291,7 @@ class EmbeddingService:
         sequences ready for the model's learned positional encodings.
 
         Parameters:
-        - news_df: Raw news data with 'published_at' and 'headline' columns
+        - news_df: Raw news data with 'created_at' and 'headline' columns
         - sequence_length: Number of time buckets to include in the sequence
         - bucket_hours: Hours per temporal bucket (default 24 = daily buckets)
 
@@ -309,10 +309,10 @@ class EmbeddingService:
             }
 
         # Sort news by publication time (oldest first for chronological order)
-        sorted_news = news_df.sort_values("published_at").copy()
+        sorted_news = news_df.sort_values("created_at").copy()
 
         # Create temporal buckets
-        end_date = sorted_news["published_at"].max()
+        end_date = sorted_news["created_at"].max()
         end_date - timedelta(hours=bucket_hours * sequence_length)
 
         # Initialize sequences
@@ -329,8 +329,8 @@ class EmbeddingService:
 
             # Find headlines in this bucket
             bucket_news = sorted_news[
-                (sorted_news["published_at"] >= bucket_start)
-                & (sorted_news["published_at"] < bucket_end)
+                (sorted_news["created_at"] >= bucket_start)
+                & (sorted_news["created_at"] < bucket_end)
             ]
 
             bucket_headlines = bucket_news["headline"].fillna("").tolist()
@@ -383,7 +383,7 @@ class EmbeddingService:
             sequence_length = settings.model.news_sequence_length
 
         # Filter news up to the target date
-        relevant_news = news_df[news_df["published_at"] <= target_date].copy()
+        relevant_news = news_df[news_df["created_at"] <= target_date].copy()
 
         # Create the temporal sequences
         sequences = self.create_temporal_sequences(
